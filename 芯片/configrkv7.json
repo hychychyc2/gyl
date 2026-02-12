@@ -1,0 +1,248 @@
+{
+    "email_config": {
+        "account": "yuchuan.he@casue.com",
+        "password": "jNa8dfSkfmpKrgA2",
+        "imap_server": "imap.appia.vip",
+        "root_folder": "INBOX/系统邮件",
+        "search_criteria": "(SINCE \"10-Feb-2026\" BEFORE \"11-Feb-2026\")",
+        "recursive_folders": true,
+        "exclude_folders": ["垃圾邮件", "已删除", "垃圾箱", "draft", "sent"],
+        "temp_dir": "E:\\供应链\\芯片\\总表\\temp_attachments"
+    },
+    "out_file": {
+        "file_path": "E:\\供应链\\芯片\\总表\\test.xlsx",
+        "backup": true
+    },
+    "rules": [
+        {
+            "attach_rule": {
+                "match_key": "CUA_FG_INVENTORY_REPORT_",
+                "suffix": ".xlsx",
+                "sheet": "Sheet1",
+                "header_row": 1,
+                "cols_range": ["A","B","D", "G", "H", "I", "J", "K", "L"]
+            },
+            "local_rule": {
+                "sheet": "入库",
+                "header_row": 1,
+                "cols_range": ["A","I","B", "C", "F", "H", "D", "G", "E"],
+                "write_mode": "overwrite",
+                "deduplicate": true,
+                "force_formula_cols": ["J"]
+            },
+            "data_process_rules": [
+              {"type": "delete_str", "col": "D", "target_str": "-R"},
+              {"type": "delete_str", "col": "K", "target_str": ".tp"},
+              {"type": "slice_combine", "col": "H", "slice_rule": "[0:1]", "combine_str": "BIN"},
+              {"type": "slice_combine", "col": "A", "slice_rule": "[0:0]", "combine_str": "今日库存"}
+            ]
+        },
+        {
+            "attach_rule": {
+                "match_key": "ASECL_2026",
+                "suffix": ".xlsx",
+                "sheet": "良品",
+                "header_row": 1,
+                "cols_range": ["B", "D", "E", "G-I", "K-L", "M"]
+            },
+            "local_rule": {
+                "sheet": "入库",
+                "header_row": 1,
+                "cols_range": ["A", "H", "B", "C-E", "F-G", "I"],
+                "write_mode": "append",
+                "deduplicate": true,
+                "force_formula_cols": ["J"]
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "SPILSZ_FtFgList",
+                "suffix": ".xlsx",
+                "sheet": "FT",
+                "header_row": 1,
+                "cols_range": ["A-B", "C", "D-E", "F", "G", "H","I"],
+                "filter_conditions":[
+                    {
+                      "col": "G",
+                      "operator": "in",
+                      "value": ["BIN1", "BIN2", "BIN3", "BIN4", "BIN5"]
+                    }
+                  ]
+            },
+            "local_rule": {
+                "sheet": "入库",
+                "header_row": 1,
+                "cols_range": ["A-B", "I", "C-D", "G", "F", "E", "H"],
+                "write_mode": "append",
+                "deduplicate": true,
+                "force_formula_cols": ["J"]
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "C002 BTM CHANHUA",
+                "suffix": ".xlsx",
+                "sheet": "入库明细",
+                "header_row": 1,
+                "cols_range": ["A", "F", "H-I", "T", "Q", "K", "J","B"],
+                "filter_conditions":[
+                    {
+                      "col": "Q",
+                      "operator": "in",
+                      "value": ["Bin1", "Bin2", "Bin3", "Bin4", "Bin5"]
+                    }
+                  ]
+            },
+            "local_rule": {
+                "sheet": "入库",
+                "header_row": 1,
+                "cols_range": ["A", "B", "C-D", "E", "F", "G", "H","I"],
+                "write_mode": "append",
+                "deduplicate": true,
+                "force_formula_cols": ["J"]
+            },
+            "data_process_rules": [
+              {"type": "slice_combine", "col": "B", "slice_rule": "[0:0]", "combine_str": "HN"}
+            ]
+        },
+        {
+            "attach_rule": {
+                "match_key": "月交付计划",
+                "suffix": ".xlsx",
+                "sheet": "入库数据",
+                "header_row": 1,
+                "cols_range": ["A", "E", "J-K", "T", "W", "AB", "AF","B"],
+                "filter_conditions":[
+                    {
+                      "col": "AB",
+                      "operator": "in",
+                      "value": ["bin1", "bin2", "bin3", "bin4", "bin5"]
+                    }
+                  ]
+            },
+            "local_rule": {
+                "sheet": "入库",
+                "header_row": 1,
+                "cols_range": ["A", "H", "B-C", "D", "E", "F", "G","I"],
+                "write_mode": "append",
+                "deduplicate": true,
+                "force_formula_cols": ["J"]
+            },
+            "data_process_rules": [
+              {"type": "slice_combine", "col": "B", "slice_rule": "[0:0]", "combine_str": "XJ"}
+            ]
+        },
+        {
+            "attach_rule": {
+                "match_key": "比特产出",
+                "suffix": ".xlsx",
+                "sheet": "1370-Fresh",
+                "header_row": 1,
+                "cols_range": ["H", "B-C", "F-G", "N", "Q", "K", "A"],
+                "filter_conditions":[
+                    {
+                      "col": "N",
+                      "operator": "in",
+                      "value": ["BIN1", "BIN2", "BIN3", "BIN4", "BIN5"]
+                    }
+                  ]
+            },
+            "local_rule": {
+                "sheet": "入库",
+                "header_row": 1,
+                "cols_range": ["A", "B-C", "D-E", "F", "G", "H", "I"],
+                "write_mode": "append",
+                "deduplicate": true,
+                "force_formula_cols": ["J"]
+            },
+            "data_process_rules": [
+              {"type": "slice_combine", "col": "A", "slice_rule": "[0:0]", "combine_str": "NJVT"}
+            ]
+        },
+        {
+            "attach_rule": {
+                "match_key": "比特产出",
+                "suffix": ".xlsx",
+                "sheet": "1370电压电流",
+                "header_row": 1,
+                "cols_range": ["H", "B-C", "F-G", "P", "S", "L", "A"],
+                "filter_conditions":[
+                    {
+                      "col": "P",
+                      "operator": "in",
+                      "value": ["BIN1", "BIN2", "BIN3", "BIN4", "BIN5"]
+                    }
+                  ]
+            },
+            "local_rule": {
+                "sheet": "入库",
+                "header_row": 1,
+                "cols_range": ["A", "B-C", "D-E", "F", "G", "H", "I"],
+                "write_mode": "append",
+                "deduplicate": true,
+                "force_formula_cols": ["J"]
+            },
+            "data_process_rules": [
+              {"type": "slice_combine", "col": "A", "slice_rule": "[0:0]", "combine_str": "NJVT"}
+            ]
+        },
+        {
+            "attach_rule": {
+                "match_key": "比特产出",
+                "suffix": ".xlsx",
+                "sheet": "1373产出明细",
+                "header_row": 1,
+                "cols_range": ["F", "D", "B", "E", "I", "N", "L","J","A"],
+                "filter_conditions":[
+                    {
+                      "col": "N",
+                      "operator": "in",
+                      "value": ["BIN1", "BIN2", "BIN3", "BIN4", "BIN5"]
+                    }
+                  ]
+            },
+            "local_rule": {
+                "sheet": "入库",
+                "header_row": 1,
+                "cols_range": ["A", "B", "C", "D", "E", "F", "G","H","I"],
+                "write_mode": "append",
+                "deduplicate": true,
+                "force_formula_cols": ["J"]
+            },
+            "data_process_rules": [
+              {"type": "slice_combine", "col": "A", "slice_rule": "[0:0]", "combine_str": "NJVT"}
+            ]
+        },
+        {
+            "attach_rule": {
+                "match_key": "比特产出",
+                "suffix": ".xlsx",
+                "sheet": "1368产出明细",
+                "header_row": 1,
+                "cols_range": ["F", "D", "B", "E", "I", "N", "L","J","A"],
+                "filter_conditions":[
+                    {
+                      "col": "N",
+                      "operator": "in",
+                      "value": ["BIN1", "BIN2", "BIN3", "BIN4", "BIN5"]
+                    }
+                  ]
+            },
+            "local_rule": {
+                "sheet": "入库",
+                "header_row": 1,
+                "cols_range": ["A", "B", "C", "D", "E", "F", "G","H","I"],
+                "write_mode": "append",
+                "deduplicate": true,
+                "force_formula_cols": ["J"]
+            },
+            "data_process_rules": [
+              {"type": "slice_combine", "col": "A", "slice_rule": "[0:0]", "combine_str": "NJVT"}
+            ]
+        }
+    ],
+    "other": {
+        "temp_dir": "E:\\供应链\\芯片\\总表\\temp_attachments",
+        "clean_temp": false
+    }
+}

@@ -1,0 +1,191 @@
+<!-- <!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel文件处理工具</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .upload-container {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Excel文件处理工具</h1>
+    <div class="upload-container">
+        <form method="POST" enctype="multipart/form-data">
+            <input type="file" name="xlsx_file" accept=".xlsx" required>
+            <br><br>
+             <input type="file" name="xlsx_file2" accept=".xlsx" required>
+            <br><br>
+            <input type="file" name="xlsm_file" accept=".xlsm" required>
+            <br><br>
+            <button class="button" type="submit">上传并处理文件</button>
+        </form>
+    </div>
+</body>
+</html> -->
+
+
+
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel文件处理工具</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .upload-container {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        #progressBar {
+            display: none;
+            margin-top: 20px;
+            height: 20px;
+            background-color: #eee;
+            border-radius: 10px;
+        }
+        #progressFill {
+            height: 100%;
+            background-color: #4CAF50;
+            border-radius: 10px;
+            width: 0%;
+        }
+        #progressText {
+            display: block;
+            text-align: center;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Excel文件处理工具</h1>
+    <div class="upload-container">
+        <input type="file" id="xlsxFile" accept=".xls" required>
+        <br><br>
+        <input type="file" id="xlsxFile2" accept=".xls" required>
+        <br><br>
+        <input type="file" id="xlsmFile" accept=".xlsm" required>
+        <br><br>
+        <button class="button" id="uploadBtn">上传并处理文件</button>
+    </div>
+    <div id="progressBar">
+        <div id="progressFill"></div>
+        <span id="progressText">处理进度：0%</span>
+    </div>
+    <script>
+        const uploadBtn = document.getElementById('uploadBtn');
+        const progressBar = document.getElementById('progressBar');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+
+        uploadBtn.addEventListener('click', async () => {
+            const xlsxFile = document.getElementById('xlsxFile').files[0];
+            const xlsxFile2 = document.getElementById('xlsxFile2').files[0];
+
+            const xlsmFile = document.getElementById('xlsmFile').files[0];
+            
+            if (!xlsxFile|| !xlsxFile2 || !xlsmFile) {
+                alert('请上传两个文件');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('xlsx_file', xlsxFile);
+            formData.append('xlsx_file2', xlsxFile2);
+
+            formData.append('xlsm_file', xlsmFile);
+            
+            // 显示进度条
+            progressBar.style.display = 'block';
+            progressFill.style.width = '0%';
+            progressText.textContent = '处理进度：0%';
+            
+            try {
+                // 提交文件获取任务ID
+                const response = await fetch('/', {
+                    method: 'POST',
+                    body: formData
+                });
+                const { task_id } = await response.json();
+                
+                // 轮询获取进度
+                const pollInterval = setInterval(async () => {
+                    const statusResponse = await fetch(`/get_progress/${task_id}`);
+                    const status = await statusResponse.json();
+                    
+                    if (status.status === 'processing') {
+                        progressFill.style.width = `${status.progress}%`;
+                        progressText.textContent = `处理进度：${status.progress}%`;
+                    } else if (status.status === 'complete') {
+                        clearInterval(pollInterval);
+                        progressFill.style.width = '100%';
+                        progressText.textContent = '处理完成！正在下载文件...';
+                        
+                        // 触发文件下载
+                        const a = document.createElement('a');
+                        a.href = `/download/${task_id}`;
+                        a.click();
+                        
+                        // 隐藏进度条
+                        setTimeout(() => {
+                            progressBar.style.display = 'none';
+                            progressFill.style.width = '0%';
+                        }, 1000);
+                    } else if (status.status === 'error') {
+                        clearInterval(pollInterval);
+                        progressText.textContent = `处理失败：${status.error}`;
+                        alert(`处理失败：${status.error}`);
+                    }
+                }, 1000); // 每秒查询一次进度
+            } catch (error) {
+                console.error('上传失败:', error);
+                progressText.textContent = '上传失败，请重试';
+            }
+        });
+    </script>
+</body>
+</html>

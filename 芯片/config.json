@@ -1,0 +1,128 @@
+{
+    "email_config": {
+      "account": "yuchuan.he@casue.com",
+      "password": "jNa8dfSkfmpKrgA2",
+      "imap_server": "imap.appia.vip",
+      "root_folder": "INBOX/系统邮件", 
+      "search_criteria": "TODAY",
+      "recursive_folders": true, 
+      "exclude_folders": ["垃圾邮件", "已删除", "垃圾箱", "draft", "sent"],
+      "temp_dir": "E:\\供应链\\芯片\\总表\\temp_attachments"
+    },
+    "rules": [
+      {
+        "attach_rule": {
+          "match_key": "CUA_FG_INVENTORY_REPORT_",
+          "suffix": ".xlsx",
+          "sheet": "Sheet1",
+          "header_row": 1,
+          "cols_range": {  
+            "start_col": "A",  
+            "end_col": "L"       
+          }
+        },
+        "local_rule": {
+          "file_path": "E:\\供应链\\芯片\\总表\\机型对照表-251222.xlsx",
+          "sheet": "ASECL",
+          "header_row": 1,
+          "cols_range": {
+            "start_col": "A",
+            "end_col": "L"
+          },
+          "output_path": "E:\\供应链\\芯片\\总表\\机型对照表-251224.xlsx"
+        }
+      },
+      {
+        "attach_rule": {
+          "match_key": "SPILSZ onhand report",
+          "suffix": ".xlsx",
+          "sheet": "Sheet1",
+          "header_row": 1,
+          "cols_range": {  
+            "start_col": "A",  
+            "end_col": "L"       
+          }
+        },
+        "local_rule": {
+          "file_path": "E:\\供应链\\芯片\\总表\\机型对照表-251224.xlsx",
+          "sheet": "SPILSZ",
+          "header_row": 1,
+          "cols_range": {
+            "start_col": "A",
+            "end_col": "L"
+          },
+          "output_path": "E:\\供应链\\芯片\\总表\\机型对照表-251224.xlsx"
+        }
+      },
+      {
+        "attach_rule": {
+          "match_key": "RPT_STOCK_JSCC",
+          "suffix": ".xls",
+          "sheet": "测试",
+          "header_row": 2,
+          "cols_range": {  
+            "start_col": "A",  
+            "end_col": "P"       
+          }
+        },
+        "local_rule": {
+          "file_path": "E:\\供应链\\芯片\\总表\\机型对照表-251224.xlsx",
+          "sheet": "JSCC",
+          "header_row": 2,
+          "cols_range": {
+            "start_col": "A",
+            "end_col": "P"
+          },
+          "output_path": "E:\\供应链\\芯片\\总表\\机型对照表-251224.xlsx"
+        }
+      },
+      {
+        "attach_rule": {
+          "match_key": "C002 BTM CHANHUA",
+          "suffix": ".xlsx",
+          "sheet": "良品库存",
+          "header_row": 1,
+          "cols_range": {  
+            "start_col": "A",  
+            "end_col": "U"       
+          }
+        },
+        "local_rule": {
+          "file_path": "E:\\供应链\\芯片\\总表\\机型对照表-251224.xlsx",
+          "sheet": "WXHN",
+          "header_row": 1,
+          "cols_range": {
+            "start_col": "A",
+            "end_col": "U"
+          },
+          "output_path": "E:\\供应链\\芯片\\总表\\机型对照表-251224.xlsx"
+        }
+      },
+      {
+        "attach_rule": {
+          "match_key": "月交付计划",
+          "suffix": ".xlsx",
+          "sheet": "pass库存",
+          "header_row": 1,
+          "cols_range": {  
+            "start_col": "A",  
+            "end_col": "BG"       
+          }
+        },
+        "local_rule": {
+          "file_path": "E:\\供应链\\芯片\\总表\\机型对照表-251224.xlsx",
+          "sheet": "XJ",
+          "header_row": 1,
+          "cols_range": {
+            "start_col": "A",
+            "end_col": "BG"
+          },
+          "output_path": "E:\\供应链\\芯片\\总表\\机型对照表-251224.xlsx"
+        }
+      }
+    ],
+    "other": {
+      "temp_dir": "E:\\供应链\\芯片\\总表\\temp_attachments",
+      "clean_temp": false
+    }
+  }
