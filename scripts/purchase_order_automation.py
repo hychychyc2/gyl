@@ -334,22 +334,39 @@ def get_existing_order_numbers(statistics_file):
 # ============== WebADI模板填充模块 ==============
 
 def fill_webadi_template(order_data, output_file):
-    """填充WebADI模板"""
-    template_file = TEMPLATES_DIR / "webadi_template.xlsm"
-    if not template_file.exists():
-        print(f"模板文件不存在: {template_file}")
-        return False
+    """
+    填充WebADI模板
     
-    wb = load_workbook(template_file)
-    ws = wb["WebADI"]
+    注意：由于xlsm包含VBA宏和自定义图片，openpyxl无法直接保存。
+    这里生成一个纯xlsx数据文件，用户需要：
+    1. 打开WebADI模板
+    2. 复制xlsx文件中的数据到模板
+    3. 或者使用xlwings/win32com在本地操作（需要Excel）
+    """
+    from openpyxl import Workbook
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "采购订单数据"
     
     entity = order_data["entity"]
     entity_config = ENTITY_CONFIG[entity]
     
-    # 填充头部信息
-    # 行5开始是数据行
+    # 添加标题行
+    headers = [
+        "加载", "业务实体", "类型", "采购订单号", "币种", "采购员", "供应商", 
+        "供应商地点", "来源子库存", "收货方", "目的子库存", "收单方", "付款方式",
+        "内部申请类型", "货贷", "是否报关", "加工费报价OA单据号", "摘要", "业务模式",
+        "行号", "行类型", "物料", "物料说明", "单位", "数量", "创建日期", 
+        "承诺日期", "需求日期", "不含税单价", "含税单价", "税率", "品牌/厂商"
+    ]
+    for col, header in enumerate(headers, 1):
+        ws.cell(row=1, column=col, value=header)
     
-    row_num = 5
+    # 填充数据行
+    row_num = 2
+    line_num = 1
+    
     for item in order_data["items"]:
         model = item["model"]
         quantity = item["quantity"]
@@ -359,35 +376,47 @@ def fill_webadi_template(order_data, output_file):
             print(f"跳过无价格的型号: {model}")
             continue
         
-        # 根据模板列填充
-        ws.cell(row=row_num, column=2, value="Y")  # 加载标记
-        ws.cell(row=row_num, column=3, value=entity)  # 业务实体
-        ws.cell(row=row_num, column=4, value="标准采购订单")  # 类型
-        ws.cell(row=row_num, column=5, value=order_data["order_number"])  # 采购订单号
-        ws.cell(row=row_num, column=6, value=entity_config["currency"])  # 币种
-        ws.cell(row=row_num, column=7, value="何宇川")  # 采购员
-        ws.cell(row=row_num, column=8, value="BITMAIN DEVELOPMENT PTE. LTD.")  # 供应商
-        ws.cell(row=row_num, column=9, value="SG")  # 供应商地点
+        # 头部信息
+        ws.cell(row=row_num, column=1, value="Y")  # 加载标记
+        ws.cell(row=row_num, column=2, value=entity)  # 业务实体
+        ws.cell(row=row_num, column=3, value="标准采购订单")  # 类型
+        ws.cell(row=row_num, column=4, value=order_data["order_number"])  # 采购订单号
+        ws.cell(row=row_num, column=5, value=entity_config["currency"])  # 币种
+        ws.cell(row=row_num, column=6, value="何宇川,")  # 采购员
+        ws.cell(row=row_num, column=7, value="BITMAIN DEVELOPMENT PTE. LTD.")  # 供应商
+        ws.cell(row=row_num, column=8, value="SG")  # 供应商地点
+        ws.cell(row=row_num, column=9, value="SZKXYCL")  # 来源子库存
+        ws.cell(row=row_num, column=10, value="1004.Bitmain Shenzhen")  # 收货方
+        ws.cell(row=row_num, column=11, value="SZKXYCL")  # 目的子库存
+        ws.cell(row=row_num, column=12, value="1004.Bitmain Shenzhen")  # 收单方
+        ws.cell(row=row_num, column=13, value="付款方式一")  # 付款方式
+        ws.cell(row=row_num, column=16, value="Y")  # 是否报关
         
         # 行信息
-        ws.cell(row=row_num, column=15, value=row_num - 4)  # 行号
-        ws.cell(row=row_num, column=16, value="BM系列")  # 行类型
-        ws.cell(row=row_num, column=17, value=f"Y3101{model.replace('BM', '')}")  # 物料编码（需要根据实际编码调整）
-        ws.cell(row=row_num, column=18, value=f"{model}芯片")  # 物料说明
-        ws.cell(row=row_num, column=19, value="个")  # 单位
-        ws.cell(row=row_num, column=20, value=quantity)  # 数量
-        ws.cell(row=row_num, column=21, value=date.today())  # 创建日期
-        ws.cell(row=row_num, column=22, value=date.today())  # 承诺日期
-        ws.cell(row=row_num, column=23, value=date.today())  # 需求日期
-        ws.cell(row=row_num, column=24, value=price)  # 不含税单价
+        ws.cell(row=row_num, column=20, value=line_num)  # 行号
+        ws.cell(row=row_num, column=21, value="BM系列")  # 行类型
+        ws.cell(row=row_num, column=22, value="Y31010544")  # 物料编码（需要根据型号调整）
+        ws.cell(row=row_num, column=23, value=f"{model}芯片")  # 物料说明
+        ws.cell(row=row_num, column=24, value="个")  # 单位
+        ws.cell(row=row_num, column=25, value=quantity)  # 数量
+        ws.cell(row=row_num, column=26, value=date.today())  # 创建日期
+        ws.cell(row=row_num, column=27, value=date.today())  # 承诺日期
+        ws.cell(row=row_num, column=28, value=date.today())  # 需求日期
+        ws.cell(row=row_num, column=29, value=price)  # 不含税单价
+        ws.cell(row=row_num, column=32, value="ANTMINER")  # 品牌/厂商
         
         row_num += 1
+        line_num += 1
     
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(output_file)
+    
+    # 保存为xlsx格式
+    xlsx_file = output_file.with_suffix('.xlsx')
+    wb.save(xlsx_file)
     wb.close()
     
-    print(f"模板已填充并保存: {output_file}")
+    print(f"数据文件已生成: {xlsx_file}")
+    print("注意: 请打开WebADI模板，将此文件数据复制粘贴到模板中")
     return True
 
 # ============== 统计表格更新模块 ==============
