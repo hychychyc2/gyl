@@ -129,14 +129,37 @@ def classify_email(subject, has_attachment):
     
     返回: "domestic" 或 "international"
     """
-    subject_lower = subject.lower()
-    
     # 有附件且包含"进口产品统计表" → 国内
     if has_attachment and "进口产品统计表" in subject:
         return "domestic"
     
     # 其他情况 → 海外（正文直接写的出货通知、出口资料等）
     return "international"
+
+def get_price_source(table_type, item_data):
+    """
+    根据表格类型获取价格来源
+    
+    规则（用户确认）：
+    - 国内表格：价格从附件获得（邮件解析时已提取）
+    - 海外表格：价格从价格表查询
+    
+    参数：
+        table_type: "domestic" 或 "international"
+        item_data: 包含model和可能的price字段
+    
+    返回：价格（float）或 None
+    """
+    if table_type == "domestic":
+        # 国内：从附件数据获取价格（item_data中应该有price字段）
+        return item_data.get("price")
+    
+    elif table_type == "international":
+        # 海外：从价格表查询
+        model = item_data.get("model", "")
+        return get_model_price(model)
+    
+    return None
 
 def decode_email_header(header):
     """解码邮件头部"""
@@ -548,10 +571,16 @@ def update_statistics_table(order_data, entity):
         ws.cell(row=row_num, column=10, value=order_data["order_number"])  # 新PO
         ws.cell(row=row_num, column=11, value=order_data.get("sales_order_number", ""))  # SO
         
-        # 单价（从价格表查询，如果没有提供价格）
-        price = item.get("price")
-        if price is None:
+        # 单价：根据表格类型获取
+        # 国内（SZK,ICK,HSJ,BJK）→ 从附件数据获取
+        # 海外（DPT等）→ 从价格表查询
+        if entity in ["SZK", "ICK", "HSJ", "BJK"]:
+            # 国内：价格从附件获得（item_data中的price字段）
+            price = item.get("price")
+        else:
+            # 海外：价格从价格表查询
             price = get_model_price(item["model"])
+        
         if price is not None:
             cell = ws.cell(row=row_num, column=12, value=float(price))
             cell.number_format = '0.00'
