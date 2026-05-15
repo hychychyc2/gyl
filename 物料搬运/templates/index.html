@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel文件处理工具</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .upload-container {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        #progressBar {
+            display: none;
+            margin-top: 20px;
+            height: 20px;
+            background-color: #eee;
+            border-radius: 10px;
+        }
+        #progressFill {
+            height: 100%;
+            background-color: #4CAF50;
+            border-radius: 10px;
+            width: 0%;
+        }
+        #progressText {
+            display: block;
+            text-align: center;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Excel文件处理工具</h1>
+    <div class="upload-container">
+        <!-- 订单列表输入（逗号分隔） -->
+        <div class="form-group">
+            <label for="orderList">订单列表（逗号分隔，例如：OLTT20250702003-ZB,XXX）：</label>
+            <input type="text" id="orderList" placeholder="输入订单号，多个用逗号分隔" required>
+        </div>
+
+        <!-- 大计划路径输入 -->
+        <div class="form-group">
+            <label for="bigPlanPath">大计划文件路径：</label>
+            <input type="text" id="bigPlanPath" placeholder="例如：E:\\供应链\\周欠料\\需求数据--2025.06.28 vs 0626版大计划-1.xlsx" required>
+        </div>
+
+        <!-- 文件上传区域 -->
+        <div class="form-group">
+            <label for="xlsxFile">库存收发存报表：</label>
+            <input type="file" id="xlsxFile" accept=".xls" required>
+        </div>
+
+        <div class="form-group">
+            <label for="xlsxFile2">外协厂投料明细表：</label>
+            <input type="file" id="xlsxFile2" accept=".xls" required>
+        </div>
+
+        <div class="form-group">
+            <label for="xlsmFile">模板文件（.xlsm）：</label>
+            <input type="file" id="xlsmFile" accept=".xlsm" required>
+        </div>
+
+        <button class="button" id="uploadBtn">上传并处理文件</button>
+    </div>
+
+    <div id="progressBar">
+        <div id="progressFill"></div>
+        <span id="progressText">处理进度：0%</span>
+    </div>
+
+    <script>
+        const uploadBtn = document.getElementById('uploadBtn');
+        const progressBar = document.getElementById('progressBar');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+
+        uploadBtn.addEventListener('click', async () => {
+            // 获取输入值
+            const xlsxFile = document.getElementById('xlsxFile').files[0];
+            const xlsxFile2 = document.getElementById('xlsxFile2').files[0];
+            const xlsmFile = document.getElementById('xlsmFile').files[0];
+            const orderListStr = document.getElementById('orderList').value.trim();
+            const bigPlanPath = document.getElementById('bigPlanPath').value.trim();
+
+            // 验证输入
+            if (!xlsxFile || !xlsxFile2 || !xlsmFile) {
+                alert('请上传所有 required 文件');
+                return;
+            }
+            if (!orderListStr) {
+                alert('请输入订单列表');
+                return;
+            }
+            if (!bigPlanPath) {
+                alert('请输入大计划文件路径');
+                return;
+            }
+
+            // 构建表单数据
+            const formData = new FormData();
+            formData.append('xlsx_file', xlsxFile);
+            formData.append('xlsx_file2', xlsxFile2);
+            formData.append('xlsm_file', xlsmFile);
+            formData.append('order_list', orderListStr);  // 订单列表字符串
+            formData.append('big_plan_path', bigPlanPath);  // 大计划路径
+
+            // 显示进度条
+            progressBar.style.display = 'block';
+            progressFill.style.width = '0%';
+            progressText.textContent = '处理进度：0%';
+
+            try {
+                // 提交文件获取任务ID
+                const response = await fetch('/', {
+                    method: 'POST',
+                    body: formData
+                });
+                const { task_id } = await response.json();
+
+                // 轮询获取进度
+                const pollInterval = setInterval(async () => {
+                    const statusResponse = await fetch(`/get_progress/${task_id}`);
+                    const status = await statusResponse.json();
+
+                    if (status.status === 'processing') {
+                        progressFill.style.width = `${status.progress}%`;
+                        progressText.textContent = `处理进度：${status.progress}%`;
+                    } else if (status.status === 'complete') {
+                        clearInterval(pollInterval);
+                        progressFill.style.width = '100%';
+                        progressText.textContent = '处理完成！正在下载文件...';
+                        
+                        // 触发下载
+                        const a = document.createElement('a');
+                        a.href = `/download/${task_id}`;
+                        a.click();
+
+                        // 重置进度条
+                        setTimeout(() => {
+                            progressBar.style.display = 'none';
+                        }, 1500);
+                    } else if (status.status === 'error') {
+                        clearInterval(pollInterval);
+                        progressText.textContent = `处理失败：${status.error}`;
+                        alert(`处理失败：${status.error}`);
+                    }
+                }, 1000);  // 每秒查询一次
+            } catch (error) {
+                console.error('上传失败:', error);
+                progressText.textContent = '上传失败，请重试';
+            }
+        });
+    </script>
+</body>
+</html>

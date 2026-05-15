@@ -1,0 +1,13 @@
+{
+    "confluence_url": "https://wiki.appia.vip", 
+    "page_id": "83036222",
+    "server_auth": {
+      "username": "hyc",
+      "password": "" 
+    },
+    "upload_config": {
+      "file_paths": ["E:\\供应链\\芯片\\总表\\新建文本文档.txt"], 
+      "comment": "Python JSON配置上传测试",
+      "minor_edit": true
+    }
+  }

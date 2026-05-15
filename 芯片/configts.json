@@ -1,0 +1,46 @@
+{
+    "email_config": {
+      "account": "yuchuan.he@casue.com",
+      "password": "jNa8dfSkfmpKrgA2",
+      "imap_server": "imap.appia.vip",
+      "root_folder": "INBOX/系统邮件", 
+      "search_criteria": "(SINCE \"29-Dec-2025\" BEFORE \"30-Dec-2025\")",
+      "recursive_folders": true, 
+      "exclude_folders": ["垃圾邮件", "已删除", "垃圾箱", "draft", "sent"],
+      "temp_dir": "E:\\供应链\\芯片\\总表\\temp_attachments"
+    },
+    "out_file": {
+      "file_path": "E:\\供应链\\芯片\\总表\\test.xlsx",  
+      "backup": true  
+    },
+    "rules": [
+        
+        {
+        "attach_rule": {
+          "match_key": "CUA_FG_INVENTORY_REPORT_",
+          "suffix": ".xlsx",
+          "sheet": "Sheet1",
+          "header_row": 1,
+          "cols_range": {  
+            "start_col": "D",  
+            "end_col": "D"       
+          }
+        },
+        "local_rule": {
+          "sheet": "入库",
+          "header_row": 1,
+          "cols_range": {
+            "start_col": "B",
+            "end_col": "B"
+          },
+          "write_mode":"append",
+          "deduplicate":true,
+          "force_formula_cols": ["J"] 
+        }
+      }
+    ],
+    "other": {
+      "temp_dir": "E:\\供应链\\芯片\\总表\\temp_attachments",
+      "clean_temp": false
+    }
+  }

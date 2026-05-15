@@ -1,0 +1,432 @@
+{
+  "email_config": {
+    "account": "yuchuan.he@casue.com",
+    "password": "jNa8dfSkfmpKrgA2",
+    "imap_server": "imap.appia.vip",
+    "root_folder": "INBOX/系统邮件",
+    "search_criteria": "SINCE \"12-Feb-2026\" BEFORE \"13-Feb-2026\"",
+    "recursive_folders": true,
+    "exclude_folders": [
+      "垃圾邮件",
+      "已删除",
+      "垃圾箱",
+      "draft",
+      "sent"
+    ],
+    "temp_dir": "E:\\供应链\\芯片\\总表\\temp_attachments"
+  },
+  "email_send_config": {
+    "smtp_server": "smtp.appia.vip",
+    "smtp_port": 465,
+    "sender_email": "yuchuan.he@casue.com",
+    "sender_password": "jNa8dfSkfmpKrgA2",
+    "subject": "芯片齐套报表更新库存",
+    "body": "您好，附件是最新自动处理完成的最近芯片齐套汇总报表。",
+    "to_recipients": [
+      "yuchuan.he@casue.com"
+    ],
+    "cc_recipients": []
+  },
+  "out_file": {
+    "file_path": "E:\\供应链\\芯片\\总表\\芯片齐套表_lastest.xlsx",
+    "backup": true
+  },
+  "rules": [
+    {
+      "attach_rule": {
+        "match_key": "CUA_FG_INVENTORY_REPORT_",
+        "suffix": ".xlsx",
+        "sheet": "Sheet1",
+        "header_row": 1,
+        "cols_range": [
+          "D",
+          "J",
+          "L",
+          "H",
+          "K",
+          "B"
+        ]
+      },
+      "local_rule": {
+        "sheet": "库存明细",
+        "header_row": 1,
+        "cols_range": [
+          "A-F"
+        ],
+        "write_mode": "overwrite",
+        "deduplicate": true,
+        "force_formula_cols": [
+          "G",
+          "H",
+          "I",
+          "J"
+        ]
+      },
+      "data_process_rules": [
+        {
+          "type": "delete_str",
+          "col": "D",
+          "target_str": "-R"
+        },
+        {
+          "type": "delete_str",
+          "col": "K",
+          "target_str": ".tp"
+        },
+        {
+          "type": "slice_combine",
+          "col": "H",
+          "slice_rule": "[0:1]",
+          "combine_str": "BIN"
+        },
+        {
+          "type": "slice_combine",
+          "col": "A",
+          "slice_rule": "[0:0]",
+          "combine_str": "今日库存"
+        }
+      ]
+    },
+    {
+      "attach_rule": {
+        "match_key": "SPILSZ onhand report",
+        "suffix": ".xlsx",
+        "sheet": "Sheet1",
+        "header_row": 1,
+        "cols_range": [
+          "D",
+          "F",
+          "K",
+          "J",
+          "I",
+          "C"
+        ]
+      },
+      "local_rule": {
+        "sheet": "库存明细",
+        "header_row": 1,
+        "cols_range": [
+          "A-F"
+        ],
+        "write_mode": "append",
+        "deduplicate": true,
+        "force_formula_cols": [
+          "G",
+          "H",
+          "I",
+          "J"
+        ]
+      },
+      "data_process_rules": [
+        {
+          "type": "slice_combine",
+          "col": "C",
+          "slice_rule": "[0:0]",
+          "combine_str": "SPILSZ"
+        }
+      ]
+    },
+    {
+      "attach_rule": {
+        "match_key": "RPT_STOCK_JSCC",
+        "suffix": ".xls",
+        "sheet": "测试",
+        "header_row": 2,
+        "cols_range": [
+          "J",
+          "C",
+          "F",
+          "E",
+          "O",
+          "N"
+        ]
+      },
+      "local_rule": {
+        "sheet": "库存明细",
+        "header_row": 1,
+        "cols_range": [
+          "A-F"
+        ],
+        "write_mode": "append",
+        "deduplicate": true,
+        "force_formula_cols": [
+          "G",
+          "H",
+          "I",
+          "J"
+        ]
+      },
+      "data_process_rules": [
+        {
+          "type": "slice_combine",
+          "col": "N",
+          "slice_rule": "[0:0]",
+          "combine_str": "JSCC"
+        }
+      ]
+    },
+    {
+      "attach_rule": {
+        "match_key": "C002 BTM CHANHUA",
+        "suffix": ".xlsx",
+        "sheet": "良品库存",
+        "header_row": 1,
+        "cols_range": [
+          "C",
+          "G",
+          "R",
+          "M",
+          "I",
+          "Q"
+        ]
+      },
+      "local_rule": {
+        "sheet": "库存明细",
+        "header_row": 1,
+        "cols_range": [
+          "A-F"
+        ],
+        "write_mode": "append",
+        "deduplicate": true,
+        "force_formula_cols": [
+          "G",
+          "H",
+          "I",
+          "J"
+        ]
+      },
+      "data_process_rules": [
+        {
+          "type": "slice_combine",
+          "col": "Q",
+          "slice_rule": "[0:0]",
+          "combine_str": "HN"
+        },
+        {
+          "type": "slice_combine",
+          "col": "M",
+          "slice_rule": "[0:1]",
+          "combine_str": "BIN"
+        }
+      ]
+    },
+    {
+      "attach_rule": {
+        "match_key": "月交付计划",
+        "suffix": ".xlsx",
+        "sheet": "成品库存数据",
+        "header_row": 1,
+        "cols_range": [
+          "产品型号",
+          "marking",
+          "数量",
+          "bin别",
+          "测试程序",
+          "状态"
+        ]
+      },
+      "local_rule": {
+        "sheet": "库存明细",
+        "header_row": 1,
+        "cols_range": [
+          "A-F"
+        ],
+        "write_mode": "append",
+        "deduplicate": true,
+        "force_formula_cols": [
+          "G",
+          "H",
+          "I",
+          "J"
+        ]
+      },
+      "data_process_rules": [
+        {
+          "type": "slice_combine",
+          "col": "状态",
+          "slice_rule": "[0:0]",
+          "combine_str": "XJ"
+        }
+      ]
+    },
+    {
+      "attach_rule": {
+        "match_key": "月交付计划",
+        "suffix": ".xlsx",
+        "sheet": "待测库pass",
+        "header_row": 1,
+        "cols_range": [
+          "产品型号",
+          "marking",
+          "来料数量",
+          "bin别",
+          "测试程序",
+          "状态"
+        ]
+      },
+      "local_rule": {
+        "sheet": "hold",
+        "header_row": 1,
+        "cols_range": [
+          "A-F"
+        ],
+        "write_mode": "append",
+        "deduplicate": true,
+        "force_formula_cols": [
+          "G",
+          "H",
+          "I",
+          "J"
+        ]
+      },
+      "data_process_rules": [
+        {
+          "type": "slice_combine",
+          "col": "状态",
+          "slice_rule": "[0:0]",
+          "combine_str": "XJ"
+        }
+      ]
+    },
+    {
+      "attach_rule": {
+        "match_key": "月交付计划",
+        "suffix": ".xlsx",
+        "sheet": "hold明细",
+        "header_row": 1,
+        "cols_range": [
+          "产品型号",
+          "marking",
+          "数量",
+          "bin别",
+          "测试程序",
+          "状态"
+        ]
+      },
+      "local_rule": {
+        "sheet": "hold",
+        "header_row": 1,
+        "cols_range": [
+          "A-F"
+        ],
+        "write_mode": "overwrite",
+        "deduplicate": true,
+        "force_formula_cols": [
+          "G",
+          "H",
+          "I",
+          "J"
+        ]
+      },
+      "data_process_rules": [
+        {
+          "type": "slice_combine",
+          "col": "状态",
+          "slice_rule": "[0:0]",
+          "combine_str": "XJ"
+        }
+      ]
+    },
+    {
+      "attach_rule": {
+        "match_key": "库存数据",
+        "suffix": ".xlsx",
+        "sheet": "库存数据",
+        "header_row": 1,
+        "cols_range": [
+          "CustPart",
+          "V_LotNum",
+          "I",
+          "BIN别",
+          "LastCpTestProg",
+          "M"
+        ],
+        "filter_conditions": [
+          {
+            "col": "M",
+            "operator": "in",
+            "value": [
+              "可出货",
+              "可出货-尾批tray装"
+            ]
+          }
+        ]
+      },
+      "local_rule": {
+        "sheet": "库存明细",
+        "header_row": 1,
+        "cols_range": [
+          "A-F"
+        ],
+        "write_mode": "append",
+        "deduplicate": true,
+        "force_formula_cols": [
+          "G",
+          "H",
+          "I",
+          "J"
+        ]
+      },
+      "data_process_rules": [
+        {
+          "type": "slice_combine",
+          "col": "M",
+          "slice_rule": "[0:0]",
+          "combine_str": "NJVT"
+        }
+      ]
+    },
+    {
+      "attach_rule": {
+        "match_key": "库存数据",
+        "suffix": ".xlsx",
+        "sheet": "库存数据",
+        "header_row": 1,
+        "cols_range": [
+          "CustPart",
+          "V_LotNum",
+          "I",
+          "BIN别",
+          "LastCpTestProg",
+          "M"
+        ],
+        "filter_conditions": [
+          {
+            "col": "M",
+            "operator": "in",
+            "value": [
+              "不可出货"
+            ]
+          }
+        ]
+      },
+      "local_rule": {
+        "sheet": "hold",
+        "header_row": 1,
+        "cols_range": [
+          "A-F"
+        ],
+        "write_mode": "append",
+        "deduplicate": true,
+        "force_formula_cols": [
+          "G",
+          "H",
+          "I",
+          "J"
+        ]
+      },
+      "data_process_rules": [
+        {
+          "type": "slice_combine",
+          "col": "M",
+          "slice_rule": "[0:0]",
+          "combine_str": "NJVT"
+        }
+      ]
+    }
+  ],
+  "other": {
+    "temp_dir": "E:\\供应链\\芯片\\总表\\temp_attachments",
+    "clean_temp": false
+  }
+}

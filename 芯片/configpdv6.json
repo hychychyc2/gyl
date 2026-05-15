@@ -1,0 +1,260 @@
+{
+    "email_config": {
+        "account": "yuchuan.he@casue.com",
+        "password": "jNa8dfSkfmpKrgA2",
+        "imap_server": "imap.appia.vip",
+        "root_folder": "计划/盘点",
+        "search_criteria": "(SINCE \"21-Jan-2026\" BEFORE \"31-Dec-2026\")",
+        "recursive_folders": true,
+        "exclude_folders": ["垃圾邮件", "已删除", "垃圾箱", "draft", "sent"],
+        "temp_dir": "E:\\供应链\\芯片\\总表\\temp_attachments"
+    },
+    "out_file": {
+        "file_path": "E:\\供应链\\芯片\\总表\\test.xlsx",
+        "backup": true
+    },
+    "rules": [
+        {
+            "attach_rule": {
+                "match_key": "JSCC盘存List汇总",
+                "suffix": ".7z",
+                "sheet": "Chip&wafer TTL list实物盘点",
+                "header_row": 1,
+                "cols_range": ["A-M"] 
+            },
+            "local_rule": {
+                "sheet": "Chip汇总",
+                "header_row": 1,
+                "cols_range": ["B-N"],
+                "write_mode": "append"  
+            }
+        },{
+            "attach_rule": {
+                "match_key": "盘存List汇总_0119",
+                "suffix": ".xlsx",
+                "sheet": "wafer TTL List",
+                "header_row": 1,
+                "cols_range": ["B-N"]  
+            },
+            "local_rule": {
+                "sheet": "Chip汇总",
+                "header_row": 1,
+                "cols_range": ["B-N"],
+                "write_mode": "append" 
+            }
+        },
+        {
+           "attach_rule": {
+                "match_key": "盘存List汇总_0119",
+                "suffix": ".xlsx",
+                "sheet": "chip TTL List",
+                "header_row": 1,
+                "cols_range": ["B-N"]  
+            },
+            "local_rule": {
+                "sheet": "Chip汇总",
+                "header_row": 1,
+                "cols_range": ["B-N"],
+                "write_mode": "append"   
+            }
+        },
+        
+        {
+            "attach_rule": {
+                "match_key": "副本盘存",
+                "suffix": ".xlsx",
+                "sheet": "明细",
+                "header_row": 1,
+                "cols_range": ["A-M"] 
+            },
+            "local_rule": {
+                "sheet": "Chip汇总",
+                "header_row": 1,
+                "cols_range": ["B-N"],
+                "write_mode": "append"  
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "-盘存模板",
+                "suffix": ".xlsx",
+                "sheet": "盘存模板",
+                "header_row": 1,
+                "cols_range": ["A-M"] 
+            },
+            "local_rule": {
+                "sheet": "Chip汇总",
+                "header_row": 1,
+                "cols_range": ["B-N"],
+                "write_mode": "append"  
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "SZZD芯片-晶圆盘存List汇总",
+                "suffix": ".xlsx",
+                "sheet": "1.17晶圆+芯片 汇总库存表",
+                "header_row": 1,
+                "cols_range": ["A-M"] ,
+                "filter_conditions":[
+                    {
+                      "col": "A",
+                      "operator": "not_in",
+                      "value": ["", "Device Name*"]
+                    }
+                  ]
+            },
+            "local_rule": {
+                "sheet": "Chip汇总",
+                "header_row": 1,
+                "cols_range": ["B-N"],
+                "write_mode": "append"  
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "SZQH芯片-晶圆盘存List汇总",
+                "suffix": ".xlsx",
+                "sheet": "1.17晶圆+芯片 汇总库存表",
+                "header_row": 1,
+                "cols_range": ["A-M"] ,
+                "filter_conditions":[
+                    {
+                      "col": "A",
+                      "operator": "not_in",
+                      "value": ["", "Device Name*"]
+                    }
+                  ]
+            },
+            "local_rule": {
+                "sheet": "Chip汇总",
+                "header_row": 1,
+                "cols_range": ["B-N"],
+                "write_mode": "append"  
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "盘存CH-",
+                "suffix": ".xlsx",
+                "sheet": "盘存模板",
+                "header_row": 1,
+                "cols_range": ["A-M"] ,
+                "filter_conditions":[
+                    {
+                      "col": "A",
+                      "operator": "not_in",
+                      "value": [""]
+                    }
+                  ]
+            },
+            "local_rule": {
+                "sheet": "Chip汇总",
+                "header_row": 1,
+                "cols_range": ["B-N"],
+                "write_mode": "append"  
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "盘存BTM-",
+                "suffix": ".xlsx",
+                "sheet": "盘存模板",
+                "header_row": 1,
+                "cols_range": ["A-M"] ,
+                "filter_conditions":[
+                    {
+                      "col": "A",
+                      "operator": "not_in",
+                      "value": [""]
+                    }
+                  ]
+            },
+            "local_rule": {
+                "sheet": "Chip汇总",
+                "header_row": 1,
+                "cols_range": ["B-N"],
+                "write_mode": "append"  
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "盘存List汇总_v",
+                "suffix": ".xlsx",
+                "sheet": "wafer TTL List(BUMP CP)",
+                "header_row": 1,
+                "cols_range": ["A-M"] 
+            },
+            "local_rule": {
+                "sheet": "Chip汇总",
+                "header_row": 1,
+                "cols_range": ["B-N"],
+                "write_mode": "append"  
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "盘存List汇总_v",
+                "suffix": ".xlsx",
+                "sheet": "wafer TTL List (ASSY)",
+                "header_row": 1,
+                "cols_range": ["C-O"] 
+            },
+            "local_rule": {
+                "sheet": "Chip汇总",
+                "header_row": 1,
+                "cols_range": ["B-N"],
+                "write_mode": "append"  
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "WXHN盘存List汇总",
+                "suffix": ".xlsx",
+                "sheet": "202601",
+                "header_row": 1,
+                "cols_range": ["A-M"]  
+            },
+            "local_rule": {
+                "sheet": "Chip汇总",
+                "header_row": 1,
+                "cols_range": ["B-N"] ,
+                "write_mode": "append"  
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "1月盘存终",
+                "suffix": ".xlsx",
+                "sheet": "Chip TTL list（实物盘存）",
+                "header_row": 1,
+                "cols_range": ["A-M"]  
+            },
+            "local_rule": {
+                "sheet": "Chip汇总",
+                "header_row": 1,
+                "cols_range": ["B-N"] ,
+                "write_mode": "append"  
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "BTA&BTC盘存",
+                "suffix": ".xlsx",
+                "sheet": "盘存1月",
+                "header_row": 1,
+                "cols_range": ["A-M"]  
+            },
+            "local_rule": {
+                "sheet": "Chip汇总",
+                "header_row": 1,
+                "cols_range": ["B-N"] ,
+                "write_mode": "append"  
+            }
+        }
+    ],
+    "other": {
+        "temp_dir": "E:\\供应链\\芯片\\总表\\temp_attachments",
+        "clean_temp": false
+    }
+}
