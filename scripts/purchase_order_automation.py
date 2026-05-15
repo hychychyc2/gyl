@@ -67,7 +67,57 @@ ENTITY_CONFIG = {
     "BJK": {"name": "Bitmain Beijing", "currency": "CNY", "prefix": "BJK"},
 }
 
-# ============== 邮件读取模块 ==============
+# ============== 编码和价格查询模块 ==============
+
+# 物料编码对照表（从国内统计表中的编码对账表提取）
+MODEL_CODE_MAP = {
+    "BM1370PF": "Y31010536",
+    "BM1370PA": "Y31010530",
+    "BM1370BC": "Y31010527",
+    "BM1370AA": "Y31010519",
+    "BM1370PM": "Y31010533",
+    "BM1373CC": "Y31010549",
+    "BM1373AA": "Y31010540",
+    "BM1746AA": "Y09BM1746010",
+    "BM1489": "Y31030502",
+    "BM1491AA": "Y31030502",
+}
+
+# 价格对照表（从价格表提取）
+MODEL_PRICE_MAP = {
+    "BM1370": 8.4438,
+    "BM1373CC": 31.53,
+    "BM1373AA": 31.53,
+    "BM1746": 57.64,
+    "BM1489": 5.21,
+    "BM1491": 12.75,
+}
+
+def get_model_code(model):
+    """根据型号获取物料编码"""
+    model_upper = model.upper().strip()
+    
+    # 先查完整型号
+    if model_upper in MODEL_CODE_MAP:
+        return MODEL_CODE_MAP[model_upper]
+    
+    # 再查基础型号（去掉后缀）
+    for base_model in MODEL_CODE_MAP:
+        if model_upper.startswith(base_model):
+            return MODEL_CODE_MAP[base_model]
+    
+    # 如果找不到，使用VLOOKUP公式（Excel会自动查询）
+    return f"=VLOOKUP(G{ws.max_row},编码对账表!C:D,2,0)"
+
+def get_model_price(model):
+    """根据型号获取价格"""
+    model_upper = model.upper().strip()
+    
+    for base_model in MODEL_PRICE_MAP:
+        if model_upper.startswith(base_model):
+            return MODEL_PRICE_MAP[base_model]
+    
+    return None  # 如果找不到，需要手动填写
 
 def decode_email_header(header):
     """解码邮件头部"""
@@ -467,7 +517,10 @@ def update_statistics_table(order_data, entity):
         ws.cell(row=row_num, column=5, value=order_data.get("test_factory", "XJ"))  # 测试厂
         ws.cell(row=row_num, column=6, value=order_data.get("address", ""))  # 收货地址
         ws.cell(row=row_num, column=7, value=item["model"])  # 型号
-        ws.cell(row=row_num, column=8, value=f"Y09{item['model']}")  # 物料编码
+        
+        # 物料编码（从编码对照表查询，找不到则用VLOOKUP公式）
+        model_code = get_model_code(item["model"])
+        ws.cell(row=row_num, column=8, value=model_code)
         
         # 数量（数字格式）
         cell = ws.cell(row=row_num, column=9, value=int(item["quantity"]))
@@ -476,9 +529,15 @@ def update_statistics_table(order_data, entity):
         ws.cell(row=row_num, column=10, value=order_data["order_number"])  # 新PO
         ws.cell(row=row_num, column=11, value=order_data.get("sales_order_number", ""))  # SO
         
-        # 单价（数字格式，保留2位小数）
-        cell = ws.cell(row=row_num, column=12, value=float(item["price"]))
-        cell.number_format = '0.00'
+        # 单价（从价格表查询，如果没有提供价格）
+        price = item.get("price")
+        if price is None:
+            price = get_model_price(item["model"])
+        if price is not None:
+            cell = ws.cell(row=row_num, column=12, value=float(price))
+            cell.number_format = '0.00'
+        else:
+            ws.cell(row=row_num, column=12, value="")  # 留空，手动填写
         
         ws.cell(row=row_num, column=13, value="")  # 是否已出（留空，后续手动填写）
         ws.cell(row=row_num, column=14, value="")  # 对比（留空）
