@@ -119,6 +119,25 @@ def get_model_price(model):
     
     return None  # 如果找不到，需要手动填写
 
+def classify_email(subject, has_attachment):
+    """
+    判断邮件应该写入哪个表格
+    
+    规则（用户确认）：
+    - 有附件的"进口产品统计表"邮件 → 国内表格（domestic）
+    - 正文直接写的出货通知 → 海外表格（international）
+    
+    返回: "domestic" 或 "international"
+    """
+    subject_lower = subject.lower()
+    
+    # 有附件且包含"进口产品统计表" → 国内
+    if has_attachment and "进口产品统计表" in subject:
+        return "domestic"
+    
+    # 其他情况 → 海外（正文直接写的出货通知、出口资料等）
+    return "international"
+
 def decode_email_header(header):
     """解码邮件头部"""
     if header is None:
