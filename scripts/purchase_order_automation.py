@@ -449,20 +449,23 @@ def update_statistics_table(order_data, entity):
     # 找到最后一行
     last_row = ws.max_row + 1
     
-    # 添加订单记录
+    # 添加订单记录 - 按 Excel 格式：序号, 抬头, 出货日期, 主体, 测试厂, 收货地址, 型号, 物料编码, 数量, 新PO, SO, 单价, 是否已出, 对比, 标记
     for i, item in enumerate(order_data["items"]):
         ws.cell(row=last_row + i, column=1, value=last_row + i - 1)  # 序号
-        ws.cell(row=last_row + i, column=2, value="HK Bitmain")  # 抬头
+        ws.cell(row=last_row + i, column=2, value="chanhua")  # 抬头
         ws.cell(row=last_row + i, column=3, value=date.today())  # 出货日期
-        ws.cell(row=last_row + i, column=4, value=ENTITY_CONFIG[entity]["name"])  # 主体
+        ws.cell(row=last_row + i, column=4, value=ENTITY_CONFIG.get(entity, {}).get("name", entity))  # 主体
         ws.cell(row=last_row + i, column=5, value=order_data.get("test_factory", "XJ"))  # 测试厂
-        ws.cell(row=last_row + i, column=6, value=item["model"])  # 型号
-        ws.cell(row=last_row + i, column=7, value=f"Y09{item['model']}")  # 物料编码
-        ws.cell(row=last_row + i, column=8, value=item["quantity"])  # 数量
-        ws.cell(row=last_row + i, column=9, value=order_data["order_number"])  # 采购订单号
-        ws.cell(row=last_row + i, column=10, value=item["price"])  # 单价
-        ws.cell(row=last_row + i, column=11, value=order_data.get("notes", ""))  # 备注
-        ws.cell(row=last_row + i, column=12, value=order_data.get("sales_order_number", ""))  # 销售订单号
+        ws.cell(row=last_row + i, column=6, value=order_data.get("address", ""))  # 收货地址
+        ws.cell(row=last_row + i, column=7, value=item["model"])  # 型号
+        ws.cell(row=last_row + i, column=8, value=f"Y09{item['model']}")  # 物料编码
+        ws.cell(row=last_row + i, column=9, value=item["quantity"])  # 数量
+        ws.cell(row=last_row + i, column=10, value=order_data["order_number"])  # 新PO
+        ws.cell(row=last_row + i, column=11, value=order_data.get("sales_order_number", ""))  # SO
+        ws.cell(row=last_row + i, column=12, value=item["price"])  # 单价
+        ws.cell(row=last_row + i, column=13, value="")  # 是否已出（留空，后续手动填写）
+        ws.cell(row=last_row + i, column=14, value="")  # 对比（留空）
+        ws.cell(row=last_row + i, column=15, value="")  # 标记（留空）
     
     wb.save(stats_file)
     wb.close()
