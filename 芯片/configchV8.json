@@ -1,0 +1,208 @@
+{
+  "email_config": {
+    "account": "yuchuan.he@casue.com",
+    "password": "jNa8dfSkfmpKrgA2",
+    "imap_server": "imap.appia.vip",
+    "root_folder": "INBOX/系统邮件",
+    "search_criteria": "SINCE \"12-Feb-2026\" BEFORE \"13-Feb-2026\"",
+    "recursive_folders": true,
+    "exclude_folders": [
+      "垃圾邮件",
+      "已删除",
+      "垃圾箱",
+      "draft",
+      "sent"
+    ],
+    "temp_dir": "E:\\供应链\\芯片\\总表\\temp_attachments"
+  },
+  "email_send_config": {
+    "smtp_server": "smtp.appia.vip",
+    "smtp_port": 465,
+    "sender_email": "yuchuan.he@casue.com",
+    "sender_password": "jNa8dfSkfmpKrgA2",
+    "subject": "shippinglist汇总",
+    "body": "您好，附件是最新自动处理完成的最近shippinglist汇总报表。",
+    "to_recipients": [
+      "yuchuan.he@casue.com"
+    ],
+    "cc_recipients": []
+  },
+  "out_file": {
+    "file_path": "E:\\供应链\\芯片\\总表\\出货明细.xlsx",
+    "backup": true
+  },
+  "rules": [
+    {
+      "attach_rule": {
+        "match_key": "ASECL_2026",
+        "suffix": ".xlsx",
+        "sheet": "良品",
+        "header_row": 1,
+        "cols_range": [
+          "B",
+          "E",
+          "F",
+          "H-I",
+          "K",
+          "C",
+          "L-N",
+          "D"
+        ]
+      },
+      "local_rule": {
+        "sheet": "出货明细",
+        "header_row": 1,
+        "cols_range": [
+          "B-L"
+        ],
+        "write_mode": "overwrite",
+        "deduplicate": true,
+        "force_formula_cols": []
+      },
+      "data_process_rules": []
+    },
+    {
+      "attach_rule": {
+        "match_key": "SPILSZ_ShippingList_2026",
+        "suffix": ".xlsx",
+        "sheet": "Sheet",
+        "header_row": 1,
+        "cols_range": [
+          "A",
+          "E",
+          "F",
+          "I",
+          "J-K",
+          "B",
+          "M-O",
+          "D"
+        ]
+      },
+      "local_rule": {
+        "sheet": "出货明细",
+        "header_row": 1,
+        "cols_range": [
+          "B-L"
+        ],
+        "write_mode": "append",
+        "deduplicate": true,
+        "force_formula_cols": []
+      },
+      "data_process_rules": []
+    },
+    {
+      "attach_rule": {
+        "match_key": "JSCC_ShippingList_2026",
+        "suffix": ".xlsx",
+        "sheet": "shippinglist",
+        "header_row": 1,
+        "cols_range": [
+          "A",
+          "E",
+          "F",
+          "I",
+          "J-K",
+          "B",
+          "M-O",
+          "D"
+        ]
+      },
+      "local_rule": {
+        "sheet": "出货明细",
+        "header_row": 1,
+        "cols_range": [
+          "B-L"
+        ],
+        "write_mode": "append",
+        "deduplicate": true,
+        "force_formula_cols": []
+      },
+      "data_process_rules": []
+    },
+    {
+      "attach_rule": {
+        "match_key": "SHIP_2026-",
+        "suffix": ".xlsx",
+        "sheet": "2026-02chanhua ",
+        "header_row": 2,
+        "cols_range": [
+          "A-H",
+          "K-M",
+          "O"
+        ]
+      },
+      "local_rule": {
+        "sheet": "出货明细",
+        "header_row": 1,
+        "cols_range": [
+          "A-L"
+        ],
+        "write_mode": "append",
+        "deduplicate": true,
+        "force_formula_cols": []
+      },
+      "data_process_rules": []
+    },
+    {
+      "attach_rule": {
+        "match_key": "出货报表-SHIPMENT",
+        "suffix": ".xlsx",
+        "sheet": "chanhua",
+        "header_row": 1,
+        "cols_range": [
+          "A",
+          "E",
+          "H-J",
+          "L",
+          "B",
+          "N",
+          "O-P",
+          "D"
+        ]
+      },
+      "local_rule": {
+        "sheet": "出货明细",
+        "header_row": 1,
+        "cols_range": [
+          "B-L"
+        ],
+        "write_mode": "append",
+        "deduplicate": true,
+        "force_formula_cols": []
+      },
+      "data_process_rules": []
+    },
+    {
+      "attach_rule": {
+        "match_key": "NJ-Shiping",
+        "suffix": ".xlsx",
+        "sheet": "Sheet1",
+        "header_row": 1,
+        "cols_range": [
+          "B",
+          "F",
+          "H-K",
+          "C",
+          "L",
+          "P-Q",
+          "D"
+        ]
+      },
+      "local_rule": {
+        "sheet": "出货明细",
+        "header_row": 1,
+        "cols_range": [
+          "B-L"
+        ],
+        "write_mode": "append",
+        "deduplicate": true,
+        "force_formula_cols": []
+      },
+      "data_process_rules": []
+    }
+  ],
+  "other": {
+    "temp_dir": "E:\\供应链\\芯片\\总表\\temp_attachments",
+    "clean_temp": false
+  }
+}

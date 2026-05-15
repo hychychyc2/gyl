@@ -1,0 +1,141 @@
+{
+    "email_config": {
+        "account": "yuchuan.he@casue.com",
+        "password": "jNa8dfSkfmpKrgA2",
+        "imap_server": "imap.appia.vip",
+        "root_folder": "INBOX/系统邮件",
+        "search_criteria": "(SINCE \"26-Jan-2026\" BEFORE \"27-Jan-2026\")",
+        "recursive_folders": true,
+        "exclude_folders": ["垃圾邮件", "已删除", "垃圾箱", "draft", "sent"],
+        "temp_dir": "E:\\供应链\\芯片\\总表\\temp_attachments"
+    },
+    "out_file": {
+        "file_path": "E:\\供应链\\芯片\\总表\\test.xlsx",
+        "backup": true
+    },
+    "rules": [
+        {
+            "attach_rule": {
+                "match_key": "CUA_FG_INVENTORY_REPORT_",
+                "suffix": ".xlsx",
+                "sheet": "Sheet1",
+                "header_row": 1,
+                "cols_range": ["D","J","L","H","K","B"]  
+            },
+            "local_rule": {
+                "sheet": "库存明细",
+                "header_row": 1,
+                "cols_range": ["A-F"],
+                "write_mode": "overwrite",
+                "deduplicate": true,
+                "force_formula_cols": ["G","H","I","J"]
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "SPILSZ onhand report",
+                "suffix": ".xlsx",
+                "sheet": "Sheet1",
+                "header_row": 1,
+                "cols_range": ["D","F","K","J","I","C"]  
+            },
+            "local_rule": {
+                "sheet": "库存明细",
+                "header_row": 1,
+                "cols_range": ["A-F"],
+                "write_mode": "append",
+                "deduplicate": true,
+                "force_formula_cols": ["G","H","I","J"]
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "RPT_STOCK_JSCC",
+                "suffix": ".xls",
+                "sheet": "测试",
+                "header_row": 2,
+                "cols_range": ["J","C","F","E","O","N"] 
+            },
+            "local_rule": {
+                "sheet": "库存明细",
+                "header_row": 1,
+                "cols_range": ["A-F"],
+                "write_mode": "append",
+                "deduplicate": true,
+                "force_formula_cols": ["G","H","I","J"]
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "C002 BTM CHANHUA",
+                "suffix": ".xlsx",
+                "sheet": "良品库存",
+                "header_row": 1,
+                "cols_range": ["C","G","R","M","I","Q"]  
+            },
+            "local_rule": {
+                "sheet": "库存明细",
+                "header_row": 1,
+                "cols_range": ["A-F"],
+                "write_mode": "append",
+                "deduplicate": true,
+                "force_formula_cols": ["G","H","I","J"]
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "月交付计划",
+                "suffix": ".xlsx",
+                "sheet": "库存pass",
+                "header_row": 1,
+                "cols_range": ["产品型号","marking","数量","bin别","测试程序"]  
+            },
+            "local_rule": {
+                "sheet": "库存明细",
+                "header_row": 1,
+                "cols_range": ["A-E"],
+                "write_mode": "append",
+                "deduplicate": true,
+                "force_formula_cols": ["G","H","I","J"]
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "月交付计划",
+                "suffix": ".xlsx",
+                "sheet": "待测库pass",
+                "header_row": 1,
+                "cols_range": ["产品型号","marking","来料数量","bin别","测试程序"]  
+            },
+            "local_rule": {
+                "sheet": "库存明细",
+                "header_row": 1,
+                "cols_range": ["A-E"],
+                "write_mode": "append",
+                "deduplicate": true,
+                "force_formula_cols": ["G","H","I","J"]
+            }
+        },
+        {
+            "attach_rule": {
+                "match_key": "月交付计划",
+                "suffix": ".xlsx",
+                "sheet": "pass库存hold ",
+                "header_row": 1,
+                "cols_range": ["产品型号","marking","数量","bin别","测试程序"]   
+            },
+            "local_rule": {
+                "sheet": "库存明细",
+                "header_row": 1,
+                "cols_range": ["A-E"],
+                "write_mode": "append",
+                "deduplicate": true,
+                "force_formula_cols": ["G","H","I","J"]
+            }
+        }
+    ],
+    "other": {
+        "temp_dir": "E:\\供应链\\芯片\\总表\\temp_attachments",
+        "clean_temp": false
+    }
+}
