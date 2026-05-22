@@ -473,86 +473,159 @@ def get_existing_order_numbers(statistics_file):
 
 # ============== WebADI模板填充模块 ==============
 
-def fill_webadi_template(order_data, output_file):
+def fill_webadi_template(all_orders, output_file):
     """
-    填充WebADI模板
+    填充WebADI模板（.xlsm格式，保留宏和格式）
     
-    注意：由于xlsm包含VBA宏和自定义图片，openpyxl无法直接保存。
-    这里生成一个纯xlsx数据文件，用户需要：
-    1. 打开WebADI模板
-    2. 复制xlsx文件中的数据到模板
-    3. 或者使用xlwings/win32com在本地操作（需要Excel）
+    所有订单汇总到一个文件，只写入数据行，不改变模板格式。
+    使用copy复制模板文件，然后用openpyxl写入数据。
     """
-    from openpyxl import Workbook
+    import shutil
     
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "采购订单数据"
+    # 复制模板文件（保留宏和格式）
+    template_file = TEMPLATES_DIR / "webadi_template.xlsm"
+    if not template_file.exists():
+        print(f"模板文件不存在: {template_file}")
+        return False
     
-    entity = order_data["entity"]
-    entity_config = ENTITY_CONFIG[entity]
+    shutil.copy2(template_file, output_file)
     
-    # 添加标题行
-    headers = [
-        "加载", "业务实体", "类型", "采购订单号", "币种", "采购员", "供应商", 
-        "供应商地点", "来源子库存", "收货方", "目的子库存", "收单方", "付款方式",
-        "内部申请类型", "货贷", "是否报关", "加工费报价OA单据号", "摘要", "业务模式",
-        "行号", "行类型", "物料", "物料说明", "单位", "数量", "创建日期", 
-        "承诺日期", "需求日期", "不含税单价", "含税单价", "税率", "品牌/厂商"
-    ]
-    for col, header in enumerate(headers, 1):
-        ws.cell(row=1, column=col, value=header)
+    # 加载复制的模板（保留VBA）
+    wb = load_workbook(output_file, keep_vba=True)
+    ws = wb['WebADI']
     
-    # 填充数据行
-    row_num = 2
-    line_num = 1
-    
-    for item in order_data["items"]:
-        model = item["model"]
-        quantity = item["quantity"]
-        price = item["price"]
-        
-        if price is None:
-            print(f"跳过无价格的型号: {model}")
-            continue
-        
-        # 头部信息
-        ws.cell(row=row_num, column=1, value="Y")  # 加载标记
-        ws.cell(row=row_num, column=2, value=entity)  # 业务实体
-        ws.cell(row=row_num, column=3, value="标准采购订单")  # 类型
-        ws.cell(row=row_num, column=4, value=order_data["order_number"])  # 采购订单号
-        ws.cell(row=row_num, column=5, value=entity_config["currency"])  # 币种
-        ws.cell(row=row_num, column=6, value="何宇川,")  # 采购员
-        ws.cell(row=row_num, column=7, value="BITMAIN DEVELOPMENT PTE. LTD.")  # 供应商
-        ws.cell(row=row_num, column=8, value="SG")  # 供应商地点
-        ws.cell(row=row_num, column=9, value="SZKXYCL")  # 来源子库存
-        ws.cell(row=row_num, column=10, value="1004.Bitmain Shenzhen")  # 收货方
-        ws.cell(row=row_num, column=11, value="SZKXYCL")  # 目的子库存
-        ws.cell(row=row_num, column=12, value="1004.Bitmain Shenzhen")  # 收单方
-        ws.cell(row=row_num, column=13, value="付款方式一")  # 付款方式
-        ws.cell(row=row_num, column=16, value="Y")  # 是否报关
-        
-        # 行信息
-        ws.cell(row=row_num, column=20, value=line_num)  # 行号
-        ws.cell(row=row_num, column=21, value="BM系列")  # 行类型
-        ws.cell(row=row_num, column=22, value="Y31010544")  # 物料编码（需要根据型号调整）
-        ws.cell(row=row_num, column=23, value=f"{model}芯片")  # 物料说明
-        ws.cell(row=row_num, column=24, value="个")  # 单位
-        ws.cell(row=row_num, column=25, value=quantity)  # 数量
-        ws.cell(row=row_num, column=26, value=date.today())  # 创建日期
-        ws.cell(row=row_num, column=27, value=date.today())  # 承诺日期
-        ws.cell(row=row_num, column=28, value=date.today())  # 需求日期
-        ws.cell(row=row_num, column=29, value=price)  # 不含税单价
-        ws.cell(row=row_num, column=32, value="ANTMINER")  # 品牌/厂商
-        
+    # 找到第一个空数据行（从行5开始，行3-4是表头和格式说明）
+    row_num = 5
+    while ws.cell(row=row_num, column=3).value is not None:
         row_num += 1
-        line_num += 1
+    
+    print(f"从行{row_num}开始写入数据")
+    
+    line_num = 1
+    for order_data in all_orders:
+        entity = order_data["entity"]
+        entity_config = ENTITY_CONFIG[entity]
+        
+        # 根据主体确定供应商和地点
+        if entity in ["SZK", "ICK", "HSJ"]:
+            supplier = "BITMAIN DEVELOPMENT PTE. LTD."
+            supplier_site = "SG"
+            source_subinv = "SZKXYCL"
+            receiver = "1004.Bitmain Shenzhen"
+            dest_subinv = "SZKXYCL"
+            bill_to = "1004.Bitmain Shenzhen"
+        elif entity == "DPT":
+            supplier = "Chanhua Pte. Ltd."
+            supplier_site = "SG"
+            source_subinv = "DPTXYCL"
+            receiver = "1004.Bitmain Singapore"
+            dest_subinv = "DPTXYCL"
+            bill_to = "1004.Bitmain Singapore"
+        elif entity == "BJK":
+            supplier = "Bitmain  Technologies Limited"
+            supplier_site = "HK"
+            source_subinv = "XAP"
+            receiver = "1001.Bitmain Beijing"
+            dest_subinv = "BJKDFC"
+            bill_to = "1001.Bitmain Beijing"
+        else:
+            supplier = "BITMAIN DEVELOPMENT PTE. LTD."
+            supplier_site = "SG"
+            source_subinv = "SZKXYCL"
+            receiver = "1004.Bitmain Shenzhen"
+            dest_subinv = "SZKXYCL"
+            bill_to = "1004.Bitmain Shenzhen"
+        
+        for item in order_data["items"]:
+            model = item["model"]
+            quantity = item["quantity"]
+            price = item.get("price")
+            
+            if price is None:
+                print(f"跳过无价格的型号: {model}")
+                continue
+            
+            # 获取物料编码
+            model_code = get_model_code(model)
+            if model_code is None:
+                print(f"警告: 未找到 {model} 的物料编码，留空")
+                model_code = ""
+            
+            # 头部信息（按模板列顺序）
+            ws.cell(row=row_num, column=3, value=entity)  # 业务实体
+            ws.cell(row=row_num, column=4, value="标准采购订单")  # 类型
+            ws.cell(row=row_num, column=5, value=order_data["order_number"])  # 采购订单号
+            ws.cell(row=row_num, column=6, value=entity_config["currency"])  # 币种
+            ws.cell(row=row_num, column=7, value="何宇川,")  # 采购员
+            ws.cell(row=row_num, column=8, value=supplier)  # 供应商
+            ws.cell(row=row_num, column=9, value=supplier_site)  # 供应商地点
+            ws.cell(row=row_num, column=10, value=source_subinv)  # 来源子库存
+            ws.cell(row=row_num, column=11, value=receiver)  # 收货方
+            ws.cell(row=row_num, column=12, value=dest_subinv)  # 目的子库存
+            ws.cell(row=row_num, column=13, value=bill_to)  # 收单方
+            ws.cell(row=row_num, column=14, value="付款方式一")  # 付款方式
+            ws.cell(row=row_num, column=15, value="生产用料销售")  # 内部申请类型
+            ws.cell(row=row_num, column=17, value="Y")  # 是否报关
+            
+            # 行信息
+            ws.cell(row=row_num, column=20, value="手工录入")  # 业务模式
+            ws.cell(row=row_num, column=21, value=line_num)  # 行号
+            ws.cell(row=row_num, column=22, value="BM系列")  # 行类型
+            ws.cell(row=row_num, column=23, value=model_code)  # 物料编码
+            ws.cell(row=row_num, column=25, value="个")  # 单位
+            ws.cell(row=row_num, column=26, value=quantity)  # 数量
+            ws.cell(row=row_num, column=27, value=date.today())  # 创建日期
+            ws.cell(row=row_num, column=28, value=date.today())  # 承诺日期
+            ws.cell(row=row_num, column=29, value=date.today())  # 需求日期
+            ws.cell(row=row_num, column=30, value=price)  # 不含税单价
+            ws.cell(row=row_num, column=31, value=price)  # 含税单价
+            ws.cell(row=row_num, column=32, value=0)  # 税率
+            ws.cell(row=row_num, column=33, value="ANTMINER")  # 品牌/厂商
+            
+            row_num += 1
+            line_num += 1
     
     output_file.parent.mkdir(parents=True, exist_ok=True)
     
-    # 保存为xlsx格式
-    xlsx_file = output_file.with_suffix('.xlsx')
-    wb.save(xlsx_file)
+    # 保存（兼容xlsm中的图片等资源）
+    try:
+        wb.save(output_file)
+    except KeyError as e:
+        # openpyxl保存xlsm时可能遇到mimetype问题
+        # 直接修补openpyxl的manifest模块
+        print(f"保存xlsm时遇到问题({e})，尝试兼容保存...")
+        import mimetypes as _mt
+        # 注册缺失的mimetype
+        _mt.add_type('image/jpeg', '.JPG')
+        _mt.add_type('image/jpeg', '.jpg')
+        _mt.add_type('image/png', '.PNG')
+        _mt.add_type('image/png', '.png')
+        _mt.add_type('image/gif', '.GIF')
+        _mt.add_type('image/gif', '.gif')
+        _mt.add_type('image/bmp', '.BMP')
+        _mt.add_type('image/bmp', '.bmp')
+        _mt.add_type('application/x-msmetafile', '.EMF')
+        _mt.add_type('application/x-msmetafile', '.emf')
+        _mt.add_type('application/x-msmetafile', '.WMF')
+        _mt.add_type('application/x-msmetafile', '.wmf')
+        try:
+            wb.save(output_file)
+        except KeyError:
+            # 最后手段：修补openpyxl的manifest
+            from openpyxl.packaging import manifest
+            original_register = manifest.Manifest._register_mimetypes
+            def patched_register(self, filenames=None):
+                try:
+                    original_register(self, filenames)
+                except KeyError:
+                    # 忽略未知的mimetype扩展名
+                    pass
+            manifest.Manifest._register_mimetypes = patched_register
+            wb.save(output_file)
+    wb.close()
+    
+    print(f"WebADI模板已填充: {output_file}")
+    return True
     wb.close()
     
     print(f"数据文件已生成: {xlsx_file}")
@@ -791,30 +864,23 @@ def send_result_email(result_data):
     msg.attach(MIMEText(body, 'plain', 'utf-8'))
     
     # 添加附件
+    today_str = date.today().strftime("%Y%m%d")
     attachments = []
     
     # 国内统计表
     domestic_file = STATISTICS_DIR / "international_statistics_new.xlsx"
     if domestic_file.exists():
-        attachments.append(("国内统计表.xlsx", domestic_file))
+        attachments.append((f"国内统计表_{today_str}.xlsx", domestic_file))
     
     # 海外统计表
     international_file = STATISTICS_DIR / "domestic_statistics.xlsx"
     if international_file.exists():
-        attachments.append(("海外统计表.xlsx", international_file))
+        attachments.append((f"海外统计表_{today_str}.xlsx", international_file))
     
-    # 采购订单模板
-    order_number = result_data.get("order_number")
-    if order_number:
-        order_file = OUTPUT_DIR / f"{order_number}.xlsx"
-        if order_file.exists():
-            attachments.append((f"采购订单_{order_number}.xlsx", order_file))
-    
-    # 也可以附加所有今日生成的订单
-    for f in OUTPUT_DIR.glob("*.xlsx"):
-        date_str = date.today().strftime("%Y%m%d")
-        if date_str in f.name and f.name not in [a[1].name for a in attachments]:
-            attachments.append((f.name, f))
+    # 采购订单模板（所有订单汇总，.xlsm格式）
+    template_file = OUTPUT_DIR / f"采购订单_{today_str}.xlsm"
+    if template_file.exists():
+        attachments.append((f"采购订单_{today_str}.xlsm", template_file))
     
     for filename, filepath in attachments:
         try:
@@ -915,7 +981,7 @@ def main():
             send_result_email(result_data)
             return
         
-        # 4. 生成订单号并填充模板
+        # 4. 生成订单号
         print("\n[4] 生成采购订单...")
         
         for order_info in all_orders:
@@ -936,21 +1002,27 @@ def main():
             print(f"币种: {ENTITY_CONFIG[entity]['currency']}")
             print(f"型号数量:")
             for item in order_info["items"]:
-                print(f"  - {item['model']}: {item['quantity']}pcs @ {item['price']}")
-            
-            # 填充模板
-            output_file = OUTPUT_DIR / f"{order_number}.xlsm"
-            fill_webadi_template(order_info, output_file)
-            
-            # 5. Oracle导入（需要Oracle客户端已打开）
-            print("\n[5] Oracle导入...")
-            sales_order_number = automate_oracle_import(output_file)
-            if sales_order_number:
+                print(f"  - {item['model']}: {item['quantity']}pcs @ {item.get('price')}")
+        
+        # 5. 所有订单汇总到一个WebADI模板
+        print("\n[5] 汇总写入WebADI模板...")
+        today_str = date.today().strftime("%Y%m%d")
+        template_output = OUTPUT_DIR / f"采购订单_{today_str}.xlsm"
+        fill_webadi_template(all_orders, template_output)
+        result_data["order_number"] = f"采购订单_{today_str}"
+        
+        # 6. Oracle导入（需要Oracle客户端已打开）
+        print("\n[6] Oracle导入...")
+        sales_order_number = automate_oracle_import(template_output)
+        if sales_order_number:
+            for order_info in all_orders:
                 order_info["sales_order_number"] = sales_order_number
-                print(f"销售订单号: {sales_order_number}")
-            
-            # 6. 更新统计表
-            print("\n[6] 更新统计表...")
+            print(f"销售订单号: {sales_order_number}")
+        
+        # 7. 更新统计表
+        for order_info in all_orders:
+            entity = order_info["entity"]
+            print(f"\n[7] 更新统计表 - {ENTITY_CONFIG[entity]['name']}...")
             update_statistics_table(order_info, entity)
             
             result_data["orders_created"] += 1
