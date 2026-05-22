@@ -870,17 +870,17 @@ def send_result_email(result_data):
     # 国内统计表
     domestic_file = STATISTICS_DIR / "international_statistics_new.xlsx"
     if domestic_file.exists():
-        attachments.append((f"国内统计表_{today_str}.xlsx", domestic_file))
+        attachments.append(("domestic_statistics.xlsx", domestic_file))
     
     # 海外统计表
     international_file = STATISTICS_DIR / "domestic_statistics.xlsx"
     if international_file.exists():
-        attachments.append((f"海外统计表_{today_str}.xlsx", international_file))
+        attachments.append(("international_statistics.xlsx", international_file))
     
     # 采购订单模板（所有订单汇总，.xlsm格式）
-    template_file = OUTPUT_DIR / f"采购订单_{today_str}.xlsm"
+    template_file = OUTPUT_DIR / f"purchase_order_{today_str}.xlsm"
     if template_file.exists():
-        attachments.append((f"采购订单_{today_str}.xlsm", template_file))
+        attachments.append((f"purchase_order_{today_str}.xlsm", template_file))
     
     for filename, filepath in attachments:
         try:
@@ -1009,7 +1009,7 @@ def main():
         # 5. 所有订单汇总到一个WebADI模板
         print("\n[5] 汇总写入WebADI模板...")
         today_str = date.today().strftime("%Y%m%d")
-        template_output = OUTPUT_DIR / f"采购订单_{today_str}.xlsm"
+        template_output = OUTPUT_DIR / f"purchase_order_{today_str}.xlsm"
         fill_webadi_template(all_orders, template_output)
         result_data["order_number"] = f"采购订单_{today_str}"
         
