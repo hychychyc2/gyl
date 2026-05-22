@@ -69,19 +69,37 @@ ENTITY_CONFIG = {
 
 # ============== 编码和价格查询模块 ==============
 
-# 物料编码对照表（从国内统计表中的编码对账表提取）
-MODEL_CODE_MAP = {
-    "BM1370PF": "Y31010536",
-    "BM1370PA": "Y31010530",
-    "BM1370BC": "Y31010527",
-    "BM1370AA": "Y31010519",
-    "BM1370PM": "Y31010533",
-    "BM1373CC": "Y31010549",
-    "BM1373AA": "Y31010540",
-    "BM1746AA": "Y09BM1746010",
-    "BM1489": "Y31030502",
-    "BM1491AA": "Y31030502",
-}
+# 物料编码对照表（启动时从国内统计表中的编码对账表动态加载）
+MODEL_CODE_MAP = {}
+
+def load_model_code_map():
+    """从国内统计表的编码对账表动态加载编码对照"""
+    global MODEL_CODE_MAP
+    stats_file = STATISTICS_DIR / "domestic_statistics.xlsx"
+    if not stats_file.exists():
+        print(f"统计文件不存在，无法加载编码对照表: {stats_file}")
+        return
+    
+    try:
+        wb = load_workbook(stats_file, data_only=True)
+        if '编码对账表' not in wb.sheetnames:
+            print("警告: 统计表中没有'编码对账表'sheet")
+            wb.close()
+            return
+        
+        ws = wb['编码对账表']
+        codes = {}
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            chip_name = row[1]  # 列B=芯片简称
+            material_code = row[3]  # 列D=物料编码
+            if chip_name and material_code and str(material_code).startswith('Y'):
+                codes[str(chip_name).upper().strip()] = str(material_code)
+        
+        wb.close()
+        MODEL_CODE_MAP = codes
+        print(f"已加载 {len(MODEL_CODE_MAP)} 条物料编码")
+    except Exception as e:
+        print(f"加载编码对照表失败: {e}")
 
 # 价格对照表（从价格表提取）
 MODEL_PRICE_MAP = {
@@ -106,8 +124,8 @@ def get_model_code(model):
         if model_upper.startswith(base_model):
             return MODEL_CODE_MAP[base_model]
     
-    # 如果找不到，使用VLOOKUP公式（Excel会自动查询）
-    return f"=VLOOKUP(G{ws.max_row},编码对账表!C:D,2,0)"
+    # 如果找不到，返回None（写入时留空，后续手动填写）
+    return None
 
 def get_model_price(model):
     """根据型号获取价格"""
@@ -286,13 +304,40 @@ def parse_order_info_from_email(email_body, subject):
     
     all_matches = matches1 + matches2 + [(m[2], m[0]) for m in matches3]
     
+    # 去重：同一型号只保留一条
+    seen_models = {}
     for match in all_matches:
         model = match[0].upper().strip()
         quantity = int(match[1])
-        order_info["items"].append({
-            "model": model,
-            "quantity": quantity
-        })
+        if model not in seen_models or quantity > seen_models[model]["quantity"]:
+            seen_models[model] = {"model": model, "quantity": quantity}
+    
+    # 提取价格（国内邮件中的报关单价）
+    # 格式：BM1374CC 780 PCS 38.37 或 报关单价列
+    price_pattern = r'(BM\d{4}[A-Z]{0,3}[\+\w]*)\s+(?:\d+)\s*(?:pcs|PCS|个|片)?\s*(\d+\.?\d*)'
+    price_matches = re.findall(price_pattern, email_body, re.IGNORECASE)
+    price_map = {}
+    for pm in price_matches:
+        price_map[pm[0].upper().strip()] = float(pm[1])
+    
+    # 也可以从HTML表格提取价格（报关单价列）
+    html_price_pattern = r'(BM\d{4}[A-Z]{0,3}[\+\w]*)\s*</td>\s*<td[^>]*>\s*(\d+)\s*</td>\s*<td[^>]*>\s*PCS\s*</td>\s*<td[^>]*>\s*(\d+\.?\d*)'
+    html_price_matches = re.findall(html_price_pattern, email_body, re.IGNORECASE)
+    for hpm in html_price_matches:
+        model = hpm[0].upper().strip()
+        qty = int(hpm[1])
+        price = float(hpm[2])
+        price_map[model] = price
+        # 更正数量
+        if model in seen_models:
+            seen_models[model]["quantity"] = qty
+    
+    for model, data in seen_models.items():
+        item = {"model": data["model"], "quantity": data["quantity"]}
+        # 国内：如果有邮件中的报关单价，使用它
+        if model in price_map:
+            item["price"] = price_map[model]
+        order_info["items"].append(item)
     
     # 解析主体（从邮件内容或主题）
     for entity_code in ENTITY_CONFIG.keys():
@@ -567,9 +612,13 @@ def update_statistics_table(order_data, entity):
         ws.cell(row=row_num, column=6, value=order_data.get("address", ""))  # 收货地址
         ws.cell(row=row_num, column=7, value=item["model"])  # 型号
         
-        # 物料编码（从编码对照表查询，找不到则用VLOOKUP公式）
+        # 物料编码（从编码对照表查询，找不到则留空）
         model_code = get_model_code(item["model"])
-        ws.cell(row=row_num, column=8, value=model_code)
+        if model_code:
+            ws.cell(row=row_num, column=8, value=model_code)
+        else:
+            # 找不到编码，用VLOOKUP公式
+            ws.cell(row=row_num, column=8, value=f"=VLOOKUP(G{row_num},编码对账表!C:D,2,0)")
         
         # 数量（数字格式）
         cell = ws.cell(row=row_num, column=9, value=int(item["quantity"]))
@@ -771,6 +820,10 @@ def main():
         print("\n[2] 加载价格表...")
         prices = load_price_table()
         
+        # 2.5 加载编码对照表
+        print("\n[2.5] 加载编码对照表...")
+        load_model_code_map()
+        
         # 3. 解析邮件并创建订单
         print("\n[3] 解析邮件内容...")
         
@@ -786,9 +839,17 @@ def main():
                 print("警告: 未检测到主体，默认使用SZK")
                 order_info["entity"] = "SZK"
             
-            # 匹配价格
+            # 匹配价格：国内从邮件内容提取，海外从价格表查询
+            entity = order_info["entity"]
             for item in order_info["items"]:
-                item["price"] = match_price(item["model"], prices)
+                if entity in ["SZK", "ICK", "HSJ", "BJK"]:
+                    # 国内：价格从邮件内容获取（item可能已有price字段）
+                    if item.get("price") is None:
+                        # 如果邮件没提取到价格，从价格表查
+                        item["price"] = match_price(item["model"], prices)
+                else:
+                    # 海外：价格从价格表查询
+                    item["price"] = match_price(item["model"], prices)
             
             all_orders.append(order_info)
         
