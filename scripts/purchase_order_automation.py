@@ -514,13 +514,20 @@ def fill_webadi_template(order_data, output_file):
 # ============== 统计表格更新模块 ==============
 
 def update_statistics_table(order_data, entity):
-    """更新统计表格"""
+    """更新统计表格
+    
+    文件对应关系（用户确认）：
+    - 国内（SZK/ICK/HSJ/BJK）→ international_statistics_new.xlsx
+    - 海外（DPT等）→ domestic_statistics.xlsx
+    
+    注意：文件名和实际内容是反的，这是历史命名原因
+    """
     if entity in ["SZK", "ICK", "HSJ", "BJK"]:
-        # 国内表格
-        stats_file = STATISTICS_DIR / "domestic_statistics.xlsx"
+        # 国内表格（文件名是international但内容是国内数据）
+        stats_file = STATISTICS_DIR / "international_statistics_new.xlsx"
     else:
-        # 国际表格
-        stats_file = STATISTICS_DIR / "international_statistics.xlsx"
+        # 海外表格（文件名是domestic但内容是海外数据）
+        stats_file = STATISTICS_DIR / "domestic_statistics.xlsx"
     
     if not stats_file.exists():
         print(f"统计文件不存在: {stats_file}")
@@ -801,7 +808,7 @@ def main():
             existing_numbers = get_existing_order_numbers(
                 STATISTICS_DIR / "domestic_statistics.xlsx"
             ) + get_existing_order_numbers(
-                STATISTICS_DIR / "international_statistics.xlsx"
+                STATISTICS_DIR / "international_statistics_new.xlsx"
             )
             
             order_number = generate_order_number(entity, existing_numbers)
