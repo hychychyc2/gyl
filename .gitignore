@@ -36,7 +36,6 @@ ws_tunnel_server.py
 
 # 测试数据
 data/statistics/test_*
-data/statistics/international_statistics_new.xlsx
 data/output/
 
 # 包管理
