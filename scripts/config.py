@@ -12,7 +12,7 @@ ERP_USERNAME = "607693"
 ERP_PASSWORD = "hyc010815"
 
 # 报告发送目标
-REPORT_EMAIL = "yuchuan.he@casue.com"
+REPORT_EMAILS = ["yuchuan.he@casue.com", "haixia.lu@casue.com"]
 
 # 主体映射（可根据需要添加）
 ENTITY_MAP = {

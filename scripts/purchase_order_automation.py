@@ -46,7 +46,7 @@ CONFIG = {
         "username": "607693",
         "password": "hyc010815"
     },
-    "report_email": "yuchuan.he@casue.com",  # 报告发送目标
+    "report_emails": ["yuchuan.he@casue.com", "haixia.lu@casue.com"],  # 报告发送目标（多个收件人）
 }
 
 # 文件路径配置
@@ -754,7 +754,7 @@ def send_result_email(result_data):
     
     msg = MIMEMultipart()
     msg['From'] = CONFIG["email"]["account"]
-    msg['To'] = CONFIG["report_email"]
+    msg['To'] = ", ".join(CONFIG["report_emails"])
     msg['Subject'] = f"采购订单自动化报告 - {date.today().strftime('%Y-%m-%d')}"
     
     body = f"""
