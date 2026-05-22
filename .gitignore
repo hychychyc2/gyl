@@ -1,0 +1,45 @@
+# 敏感文件 - 绝不push
+.env
+.local_config
+credentials
+*.token
+
+# memory文件（包含可能敏感的信息）
+memory/
+
+# 运行时文件
+node_modules/
+venv/
+__pycache__/
+*.pyc
+*.log
+tunnel*.log
+
+# 临时文件
+*.tar.gz
+*.zip
+.openclaw/
+BOOTSTRAP.md
+HEARTBEAT.md
+IDENTITY.md
+SOUL.md
+TOOLS.md
+USER.md
+
+# 代理和隧道脚本（包含服务器信息）
+erp_proxy.py
+erp_proxy_server.py
+tunnel_443.py
+tunnel_server.py
+ws_tunnel_server.js
+ws_tunnel_server.py
+
+# 测试数据
+data/statistics/test_*
+data/statistics/international_statistics_new.xlsx
+data/output/
+
+# 包管理
+package.json
+package-lock.json
+.local/
