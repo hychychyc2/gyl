@@ -4,14 +4,29 @@
 采购订单自动化脚本
 每天晚上10点运行，自动完成：
 1. 读取杨娜邮件获取订单信息
-2. 匹配价格表
-3. 生成采购订单号
-4. 填充WebADI模板
-5. 操作Oracle导入
-6. 更新统计表格
-7. 发送结果邮件
+2. 下载邮件附件（进口产品统计表）
+3. 从附件Excel提取国内订单数据
+4. 从邮件正文提取海外订单数据
+5. 匹配价格和编码
+6. 生成采购订单号
+7. 填充WebADI模板（.xlsm保留宏）
+8. 更新统计表格
+9. 发送结果邮件
 
-使用方法：
+修补openpyxl xlsm保存问题（.JPG mimetype导致保存失败）"""
+import mimetypes
+import openpyxl.packaging.manifest as manifest_module
+
+# Patch openpyxl manifest：让未知扩展名不报错
+_original_register = manifest_module.Manifest._register_mimetypes
+def _patched_register(self, filenames=None):
+    try:
+        _original_register(self, filenames)
+    except KeyError:
+        pass  # 跳过未知mimetype（如.JPG等嵌入图片）
+manifest_module.Manifest._register_mimetypes = _patched_register
+
+"""
     python purchase_order_automation.py
 
 依赖安装：
@@ -590,93 +605,42 @@ def get_existing_order_numbers(statistics_file):
 
 def fill_webadi_template(all_orders, output_file):
     """
-    生成采购订单数据文件（xlsx格式）
+    填充WebADI模板（.xlsm格式，保留宏和格式）
     
-    不修改xlsm模板（避免损坏宏），而是生成一个纯数据xlsx文件，
-    用户需要手动将数据复制到WebADI模板中。
-    
-    所有订单汇总到一个文件。
+    所有订单汇总到一个文件，只写入数据行，不改变模板格式。
+    复制模板文件后用openpyxl写入数据，保留VBA宏。
     """
-    from openpyxl import Workbook
+    import shutil
     
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "采购订单数据"
+    template_file = TEMPLATES_DIR / "webadi_template.xlsm"
+    if not template_file.exists():
+        print(f"模板文件不存在: {template_file}")
+        return False
     
-    # 添加标题行（按模板列顺序）
-    headers = [
-        "",  # 列1
-        "",  # 列2
-        "业务实体",  # 列3
-        "类型",  # 列4
-        "采购订单号",  # 列5
-        "币种",  # 列6
-        "采购员",  # 列7
-        "供应商",  # 列8
-        "供应商地点",  # 列9
-        "来源子库存",  # 列10
-        "收货方",  # 列11
-        "目的子库存",  # 列12
-        "收单方",  # 列13
-        "付款方式",  # 列14
-        "内部申请类型",  # 列15
-        "",  # 列16
-        "是否报关",  # 列17
-        "",  # 列18
-        "摘要",  # 列19
-        "业务模式",  # 列20
-        "行号",  # 列21
-        "行类型",  # 列22
-        "物料编码",  # 列23
-        "",  # 列24
-        "单位",  # 列25
-        "数量",  # 列26
-        "创建日期",  # 列27
-        "承诺日期",  # 列28
-        "需求日期",  # 列29
-        "不含税单价",  # 列30
-        "含税单价",  # 列31
-        "税率",  # 列32
-        "品牌/厂商",  # 列33
-    ]
-    for col, header in enumerate(headers, 1):
-        if header:
-            ws.cell(row=1, column=col, value=header)
+    shutil.copy2(template_file, output_file)
+    
+    wb = load_workbook(output_file, keep_vba=True)
+    ws = wb['WebADI']
+    
+    row_num = 5
+    while ws.cell(row=row_num, column=3).value is not None:
+        row_num += 1
+    
+    print(f"从行{row_num}开始写入数据")
     
     line_num = 1
+    supplier_configs = {
+        "SZK": ("BITMAIN DEVELOPMENT PTE. LTD.", "SG", "SZKXYCL", "1004.Bitmain Shenzhen", "SZKXYCL", "1004.Bitmain Shenzhen"),
+        "ICK": ("BITMAIN DEVELOPMENT PTE. LTD.", "SG", "SZKXYCL", "1004.Bitmain Shenzhen", "SZKXYCL", "1004.Bitmain Shenzhen"),
+        "HSJ": ("BITMAIN DEVELOPMENT PTE. LTD.", "SG", "SZKXYCL", "1004.Bitmain Shenzhen", "SZKXYCL", "1004.Bitmain Shenzhen"),
+        "BJK": ("Bitmain  Technologies Limited", "HK", "XAP", "1001.Bitmain Beijing", "BJKDFC", "1001.Bitmain Beijing"),
+        "DPT": ("Chanhua Pte. Ltd.", "SG", "DPTXYCL", "1004.Bitmain Singapore", "DPTXYCL", "1004.Bitmain Singapore"),
+    }
+    
     for order_data in all_orders:
         entity = order_data["entity"]
         entity_config = ENTITY_CONFIG[entity]
-        
-        # 根据主体确定供应商和地点
-        if entity in ["SZK", "ICK", "HSJ"]:
-            supplier = "BITMAIN DEVELOPMENT PTE. LTD."
-            supplier_site = "SG"
-            source_subinv = "SZKXYCL"
-            receiver = "1004.Bitmain Shenzhen"
-            dest_subinv = "SZKXYCL"
-            bill_to = "1004.Bitmain Shenzhen"
-        elif entity == "DPT":
-            supplier = "Chanhua Pte. Ltd."
-            supplier_site = "SG"
-            source_subinv = "DPTXYCL"
-            receiver = "1004.Bitmain Singapore"
-            dest_subinv = "DPTXYCL"
-            bill_to = "1004.Bitmain Singapore"
-        elif entity == "BJK":
-            supplier = "Bitmain  Technologies Limited"
-            supplier_site = "HK"
-            source_subinv = "XAP"
-            receiver = "1001.Bitmain Beijing"
-            dest_subinv = "BJKDFC"
-            bill_to = "1001.Bitmain Beijing"
-        else:
-            supplier = "BITMAIN DEVELOPMENT PTE. LTD."
-            supplier_site = "SG"
-            source_subinv = "SZKXYCL"
-            receiver = "1004.Bitmain Shenzhen"
-            dest_subinv = "SZKXYCL"
-            bill_to = "1004.Bitmain Shenzhen"
+        supplier, supplier_site, source_subinv, receiver, dest_subinv, bill_to = supplier_configs.get(entity, supplier_configs["SZK"])
         
         for item in order_data["items"]:
             model = item["model"]
@@ -689,10 +653,7 @@ def fill_webadi_template(all_orders, output_file):
             
             model_code = get_model_code(model)
             if model_code is None:
-                print(f"警告: 未找到 {model} 的物料编码，留空")
                 model_code = ""
-            
-            row_num = line_num + 1  # 标题行在第1行
             
             ws.cell(row=row_num, column=3, value=entity)
             ws.cell(row=row_num, column=4, value="标准采购订单")
@@ -722,25 +683,16 @@ def fill_webadi_template(all_orders, output_file):
             ws.cell(row=row_num, column=32, value=0)
             ws.cell(row=row_num, column=33, value="ANTMINER")
             
+            row_num += 1
             line_num += 1
     
     output_file.parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_file)
     wb.close()
     
-    print(f"采购订单数据文件已生成: {output_file}")
-    return True
-    wb.close()
-    
     print(f"WebADI模板已填充: {output_file}")
     return True
-    wb.close()
-    
-    print(f"数据文件已生成: {xlsx_file}")
-    print("注意: 请打开WebADI模板，将此文件数据复制粘贴到模板中")
-    return True
 
-# ============== 统计表格更新模块 ==============
 
 def update_statistics_table(order_data, entity):
     """更新统计表格
@@ -979,23 +931,23 @@ def send_result_email(result_data, emails=None):
     for email_data in emails:
         for att_path in email_data.get("attachments", []):
             if "进口产品统计表" in att_path or "进口产品" in att_path:
-                attachments.append(("domestic_statistics.xlsx", att_path))
+                attachments.append((f"国内进口产品统计表_{today_str}.xlsx", att_path))
     
     # 如果没有附件，用本地表格
-    if not any("domestic" in a[0] for a in attachments):
+    if not any("国内" in a[0] for a in attachments):
         domestic_file = STATISTICS_DIR / "international_statistics_new.xlsx"
         if domestic_file.exists():
-            attachments.append(("domestic_statistics.xlsx", domestic_file))
+            attachments.append((f"国内统计表_{today_str}.xlsx", domestic_file))
     
     # 海外统计表
     international_file = STATISTICS_DIR / "domestic_statistics.xlsx"
     if international_file.exists():
-        attachments.append(("international_statistics.xlsx", international_file))
+        attachments.append((f"海外统计表_{today_str}.xlsx", international_file))
     
-    # 采购订单数据文件（xlsx格式）
-    template_file = OUTPUT_DIR / f"purchase_order_{today_str}.xlsx"
+    # 采购订单模板（.xlsm格式，保留宏）
+    template_file = OUTPUT_DIR / f"采购订单_{today_str}.xlsm"
     if template_file.exists():
-        attachments.append((f"purchase_order_{today_str}.xlsx", template_file))
+        attachments.append((f"采购订单_{today_str}.xlsm", template_file))
     
     for filename, filepath in attachments:
         try:
@@ -1142,7 +1094,7 @@ def main():
         # 5. 所有订单汇总到一个WebADI模板
         print("\n[5] 汇总写入WebADI模板...")
         today_str = date.today().strftime("%Y%m%d")
-        template_output = OUTPUT_DIR / f"purchase_order_{today_str}.xlsx"
+        template_output = OUTPUT_DIR / f"采购订单_{today_str}.xlsm"
         fill_webadi_template(all_orders, template_output)
         result_data["order_number"] = f"采购订单_{today_str}"
         
