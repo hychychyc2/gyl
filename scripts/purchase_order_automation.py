@@ -291,8 +291,107 @@ def get_today_emails_from_source():
     imap.logout()
     return emails_data
 
+def parse_order_from_attachment(attachment_path, subject):
+    """
+    从邮件附件Excel提取订单信息（进口产品统计表）
+    
+    附件中有多个sheet（世纪云芯、智能云芯、比特方舟、海口世纪等），
+    每个sheet有完整的历史数据。只提取今天新增的行。
+    
+    优势：附件数据完整（包含报关单价、供应商、物料编码等），比邮件正文更准确。
+    """
+    print(f"从附件提取数据: {attachment_path}")
+    
+    from datetime import date
+    today_int = int(date.today().strftime("%Y%m%d"))
+    
+    try:
+        wb = load_workbook(attachment_path, data_only=True)
+    except Exception as e:
+        print(f"加载附件失败: {e}")
+        return []
+    
+    # 各实体sheet的列配置
+    entity_sheet_configs = {
+        "世纪云芯": {"entity": "SZK", "date_col": 4, "import_entity_col": 3, "model_col": 8, "qty_col": 9, "price_col": 11, "supplier_col": 7, "po_col": 17, "so_col": 18, "code_col": 19},
+        "智能云芯": {"entity": "ICK", "date_col": 3, "import_entity_col": 0, "model_col": 6, "qty_col": 7, "price_col": 9, "supplier_col": 5, "po_col": 16, "so_col": 0, "code_col": 15},
+        "比特方舟": {"entity": "HSJ", "date_col": 4, "import_entity_col": 3, "model_col": 8, "qty_col": 9, "price_col": 11, "supplier_col": 7, "po_col": 17, "so_col": 18, "code_col": 19},
+        "海口世纪": {"entity": "HSJ", "date_col": 4, "import_entity_col": 3, "model_col": 8, "qty_col": 9, "price_col": 11, "supplier_col": 7, "po_col": 17, "so_col": 18, "code_col": 19},
+    }
+    
+    all_orders = []
+    
+    for sheet_name, config in entity_sheet_configs.items():
+        if sheet_name not in wb.sheetnames:
+            continue
+        
+        ws = wb[sheet_name]
+        entity = config["entity"]
+        
+        # 找今天新增的行
+        today_items = []
+        for row in range(2, ws.max_row + 1):
+            row_date = ws.cell(row=row, column=config["date_col"]).value
+            if row_date is None:
+                continue
+            try:
+                d = int(row_date)
+                if d != today_int:
+                    continue
+            except:
+                continue
+            
+            model = ws.cell(row=row, column=config["model_col"]).value
+            qty = ws.cell(row=row, column=config["qty_col"]).value
+            price = ws.cell(row=row, column=config["price_col"]).value
+            supplier = ws.cell(row=row, column=config["supplier_col"]).value
+            
+            if model and qty:
+                item = {
+                    "model": str(model).upper().strip(),
+                    "quantity": int(qty) if qty else 0,
+                    "price": float(price) if price else None,
+                    "supplier": str(supplier) if supplier else "",
+                }
+                
+                # 物料编码
+                code_col = config.get("code_col", 0)
+                if code_col > 0:
+                    code = ws.cell(row=row, column=code_col).value
+                    if code:
+                        item["material_code"] = str(code)
+                
+                today_items.append(item)
+        
+        if today_items:
+            # 确定进口主体
+            import_entity = None
+            if config.get("import_entity_col", 0) > 0:
+                import_entity = ws.cell(row=today_items[0]["quantity"] if False else 2, column=config["import_entity_col"]).value
+            
+            order_info = {
+                "items": today_items,
+                "entity": entity,
+                "address": "",
+                "test_factory": today_items[0].get("supplier", ""),
+                "notes": None,
+            }
+            
+            print(f"  {sheet_name}({entity}): {len(today_items)} 条今日数据")
+            for item in today_items:
+                print(f"    {item['model']}: {item['quantity']} PCS @ {item.get('price', 'N/A')} USD, 供应商={item.get('supplier', '')}")
+            
+            all_orders.append(order_info)
+    
+    wb.close()
+    
+    if not all_orders:
+        print("附件中未找到今日新增数据")
+    
+    return all_orders
+
 def parse_order_info_from_email(email_body, subject):
-    """从邮件内容解析订单信息"""
+    """从邮件内容解析订单信息（用于无附件的海外邮件）"""
     print(f"解析邮件: {subject}")
     
     order_info = {
@@ -969,6 +1068,27 @@ def main():
         
         all_orders = []
         for email_data in emails:
+            # 优先从附件提取数据（进口产品统计表）
+            has_import_attachment = False
+            for att_path in email_data.get("attachments", []):
+                if "进口产品统计表" in att_path or "进口产品" in att_path or "进口统计" in att_path:
+                    print(f"找到进口产品统计表附件，直接从附件提取数据")
+                    attachment_orders = parse_order_from_attachment(att_path, email_data["subject"])
+                    if attachment_orders:
+                        for order in attachment_orders:
+                            # 国内：价格已从附件提取
+                            entity = order["entity"]
+                            for item in order["items"]:
+                                if item.get("price") is None:
+                                    item["price"] = match_price(item["model"], prices)
+                            all_orders.append(order)
+                        has_import_attachment = True
+                        break
+            
+            if has_import_attachment:
+                continue
+            
+            # 无附件的邮件，从正文解析（海外邮件等）
             order_info = parse_order_info_from_email(email_data["body"], email_data["subject"])
             
             if not order_info["items"]:
@@ -979,16 +1099,13 @@ def main():
                 print("警告: 未检测到主体，默认使用SZK")
                 order_info["entity"] = "SZK"
             
-            # 匹配价格：国内从邮件内容提取，海外从价格表查询
+            # 匹配价格
             entity = order_info["entity"]
             for item in order_info["items"]:
                 if entity in ["SZK", "ICK", "HSJ", "BJK"]:
-                    # 国内：价格从邮件内容获取（item可能已有price字段）
                     if item.get("price") is None:
-                        # 如果邮件没提取到价格，从价格表查
                         item["price"] = match_price(item["model"], prices)
                 else:
-                    # 海外：价格从价格表查询
                     item["price"] = match_price(item["model"], prices)
             
             all_orders.append(order_info)
