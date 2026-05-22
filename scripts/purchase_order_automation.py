@@ -745,10 +745,12 @@ def automate_oracle_import(template_file, coords=None):
 # ============== 邮件发送模块 ==============
 
 def send_result_email(result_data):
-    """发送结果报告邮件"""
+    """发送结果报告邮件（含附件：统计表格+采购订单模板）"""
     import smtplib
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
+    from email.mime.base import MIMEBase
+    from email import encoders
     
     print("正在发送结果邮件...")
     
@@ -757,27 +759,76 @@ def send_result_email(result_data):
     msg['To'] = ", ".join(CONFIG["report_emails"])
     msg['Subject'] = f"采购订单自动化报告 - {date.today().strftime('%Y-%m-%d')}"
     
+    # 构建邮件正文
+    new_items_text = ""
+    for item in result_data.get("new_items", []):
+        new_items_text += f"  - {item['model']}: {item['quantity']} PCS, 单价: {item.get('price', 'N/A')} USD, PO: {item.get('po', 'N/A')}\n"
+    
+    if not new_items_text:
+        new_items_text = "  今日无新增数据\n"
+    
     body = f"""
 采购订单自动化执行报告
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 执行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 执行日期: {date.today().strftime('%Y-%m-%d')}
 
+📊 今日新增数据:
+{new_items_text}
 处理结果:
 - 处理邮件数: {result_data['emails_processed']}
 - 生成订单数: {result_data['orders_created']}
-- 订单详情:
-{result_data['order_details']}
+- 状态: {result_data['status']}
 
-状态: {result_data['status']}
+📎 附件说明:
+1. 国内统计表（international_statistics_new.xlsx）- 今日国内进出口数据
+2. 海外统计表（domestic_statistics.xlsx）- 今日海外出口数据
+3. 采购订单模板 - 今日生成的采购订单（如有）
 
 如有问题请及时处理。
 """
     
     msg.attach(MIMEText(body, 'plain', 'utf-8'))
     
+    # 添加附件
+    attachments = []
+    
+    # 国内统计表
+    domestic_file = STATISTICS_DIR / "international_statistics_new.xlsx"
+    if domestic_file.exists():
+        attachments.append(("国内统计表.xlsx", domestic_file))
+    
+    # 海外统计表
+    international_file = STATISTICS_DIR / "domestic_statistics.xlsx"
+    if international_file.exists():
+        attachments.append(("海外统计表.xlsx", international_file))
+    
+    # 采购订单模板
+    order_number = result_data.get("order_number")
+    if order_number:
+        order_file = OUTPUT_DIR / f"{order_number}.xlsx"
+        if order_file.exists():
+            attachments.append((f"采购订单_{order_number}.xlsx", order_file))
+    
+    # 也可以附加所有今日生成的订单
+    for f in OUTPUT_DIR.glob("*.xlsx"):
+        date_str = date.today().strftime("%Y%m%d")
+        if date_str in f.name and f.name not in [a[1].name for a in attachments]:
+            attachments.append((f.name, f))
+    
+    for filename, filepath in attachments:
+        try:
+            with open(filepath, 'rb') as f:
+                part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                part.set_payload(f.read())
+                encoders.encode_base64(part)
+                part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
+                msg.attach(part)
+            print(f"  附加: {filename}")
+        except Exception as e:
+            print(f"  附加失败 {filename}: {e}")
+    
     try:
-        # SMTP发送（需要根据邮件服务商配置）
-        # 这里使用IMAP服务商的SMTP，通常在同一主机
         smtp_server = CONFIG["email"]["imap_server"].replace("imap", "smtp")
         
         with smtplib.SMTP(smtp_server, 587) as server:
@@ -804,7 +855,9 @@ def main():
         "orders_created": 0,
         "order_details": "",
         "status": "成功",
-        "sales_order_numbers": []
+        "sales_order_numbers": [],
+        "new_items": [],
+        "order_number": None
     }
     
     try:
@@ -902,8 +955,15 @@ def main():
             
             result_data["orders_created"] += 1
             result_data["order_details"] += f"\n订单号: {order_number}\n"
+            result_data["order_number"] = order_number
             for item in order_info["items"]:
                 result_data["order_details"] += f"  {item['model']}: {item['quantity']}pcs\n"
+                result_data["new_items"].append({
+                    "model": item["model"],
+                    "quantity": item["quantity"],
+                    "price": item.get("price"),
+                    "po": order_number
+                })
         
         # 7. 发送结果邮件
         print("\n[7] 发送结果邮件...")
