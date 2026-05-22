@@ -885,10 +885,12 @@ def send_result_email(result_data):
     for filename, filepath in attachments:
         try:
             with open(filepath, 'rb') as f:
-                part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                part = MIMEBase('application', 'octet-stream')
                 part.set_payload(f.read())
                 encoders.encode_base64(part)
-                part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
+                # 使用Header编码中文文件名，避免显示为ATT0000x
+                from email.header import Header
+                part.add_header('Content-Disposition', 'attachment', filename=Header(filename, 'utf-8').encode())
                 msg.attach(part)
             print(f"  附加: {filename}")
         except Exception as e:
