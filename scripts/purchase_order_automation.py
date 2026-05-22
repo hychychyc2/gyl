@@ -244,9 +244,24 @@ def get_today_emails_from_source():
             
             # 提取邮件正文
             body = ""
+            attachments = []  # 保存附件路径
             if msg.is_multipart():
                 for part in msg.walk():
                     content_type = part.get_content_type()
+                    filename = part.get_filename()
+                    
+                    # 下载附件
+                    if filename:
+                        decoded_filename = decode_email_header(filename)
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            att_path = DATA_DIR / "attachments" / decoded_filename
+                            att_path.parent.mkdir(parents=True, exist_ok=True)
+                            with open(att_path, 'wb') as f:
+                                f.write(payload)
+                            attachments.append(str(att_path))
+                            print(f"  下载附件: {decoded_filename} ({len(payload)} bytes)")
+                    
                     if content_type == "text/plain" or content_type == "text/html":
                         try:
                             charset = part.get_content_charset() or 'utf-8'
@@ -269,7 +284,8 @@ def get_today_emails_from_source():
                 "subject": subject,
                 "from": from_addr,
                 "date": date_str,
-                "body": body
+                "body": body,
+                "attachments": attachments  # 附件路径列表
             })
     
     imap.logout()
@@ -475,31 +491,58 @@ def get_existing_order_numbers(statistics_file):
 
 def fill_webadi_template(all_orders, output_file):
     """
-    填充WebADI模板（.xlsm格式，保留宏和格式）
+    生成采购订单数据文件（xlsx格式）
     
-    所有订单汇总到一个文件，只写入数据行，不改变模板格式。
-    使用copy复制模板文件，然后用openpyxl写入数据。
+    不修改xlsm模板（避免损坏宏），而是生成一个纯数据xlsx文件，
+    用户需要手动将数据复制到WebADI模板中。
+    
+    所有订单汇总到一个文件。
     """
-    import shutil
+    from openpyxl import Workbook
     
-    # 复制模板文件（保留宏和格式）
-    template_file = TEMPLATES_DIR / "webadi_template.xlsm"
-    if not template_file.exists():
-        print(f"模板文件不存在: {template_file}")
-        return False
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "采购订单数据"
     
-    shutil.copy2(template_file, output_file)
-    
-    # 加载复制的模板（保留VBA）
-    wb = load_workbook(output_file, keep_vba=True)
-    ws = wb['WebADI']
-    
-    # 找到第一个空数据行（从行5开始，行3-4是表头和格式说明）
-    row_num = 5
-    while ws.cell(row=row_num, column=3).value is not None:
-        row_num += 1
-    
-    print(f"从行{row_num}开始写入数据")
+    # 添加标题行（按模板列顺序）
+    headers = [
+        "",  # 列1
+        "",  # 列2
+        "业务实体",  # 列3
+        "类型",  # 列4
+        "采购订单号",  # 列5
+        "币种",  # 列6
+        "采购员",  # 列7
+        "供应商",  # 列8
+        "供应商地点",  # 列9
+        "来源子库存",  # 列10
+        "收货方",  # 列11
+        "目的子库存",  # 列12
+        "收单方",  # 列13
+        "付款方式",  # 列14
+        "内部申请类型",  # 列15
+        "",  # 列16
+        "是否报关",  # 列17
+        "",  # 列18
+        "摘要",  # 列19
+        "业务模式",  # 列20
+        "行号",  # 列21
+        "行类型",  # 列22
+        "物料编码",  # 列23
+        "",  # 列24
+        "单位",  # 列25
+        "数量",  # 列26
+        "创建日期",  # 列27
+        "承诺日期",  # 列28
+        "需求日期",  # 列29
+        "不含税单价",  # 列30
+        "含税单价",  # 列31
+        "税率",  # 列32
+        "品牌/厂商",  # 列33
+    ]
+    for col, header in enumerate(headers, 1):
+        if header:
+            ws.cell(row=1, column=col, value=header)
     
     line_num = 1
     for order_data in all_orders:
@@ -545,83 +588,49 @@ def fill_webadi_template(all_orders, output_file):
                 print(f"跳过无价格的型号: {model}")
                 continue
             
-            # 获取物料编码
             model_code = get_model_code(model)
             if model_code is None:
                 print(f"警告: 未找到 {model} 的物料编码，留空")
                 model_code = ""
             
-            # 头部信息（按模板列顺序）
-            ws.cell(row=row_num, column=3, value=entity)  # 业务实体
-            ws.cell(row=row_num, column=4, value="标准采购订单")  # 类型
-            ws.cell(row=row_num, column=5, value=order_data["order_number"])  # 采购订单号
-            ws.cell(row=row_num, column=6, value=entity_config["currency"])  # 币种
-            ws.cell(row=row_num, column=7, value="何宇川,")  # 采购员
-            ws.cell(row=row_num, column=8, value=supplier)  # 供应商
-            ws.cell(row=row_num, column=9, value=supplier_site)  # 供应商地点
-            ws.cell(row=row_num, column=10, value=source_subinv)  # 来源子库存
-            ws.cell(row=row_num, column=11, value=receiver)  # 收货方
-            ws.cell(row=row_num, column=12, value=dest_subinv)  # 目的子库存
-            ws.cell(row=row_num, column=13, value=bill_to)  # 收单方
-            ws.cell(row=row_num, column=14, value="付款方式一")  # 付款方式
-            ws.cell(row=row_num, column=15, value="生产用料销售")  # 内部申请类型
-            ws.cell(row=row_num, column=17, value="Y")  # 是否报关
+            row_num = line_num + 1  # 标题行在第1行
             
-            # 行信息
-            ws.cell(row=row_num, column=20, value="手工录入")  # 业务模式
-            ws.cell(row=row_num, column=21, value=line_num)  # 行号
-            ws.cell(row=row_num, column=22, value="BM系列")  # 行类型
-            ws.cell(row=row_num, column=23, value=model_code)  # 物料编码
-            ws.cell(row=row_num, column=25, value="个")  # 单位
-            ws.cell(row=row_num, column=26, value=quantity)  # 数量
-            ws.cell(row=row_num, column=27, value=date.today())  # 创建日期
-            ws.cell(row=row_num, column=28, value=date.today())  # 承诺日期
-            ws.cell(row=row_num, column=29, value=date.today())  # 需求日期
-            ws.cell(row=row_num, column=30, value=price)  # 不含税单价
-            ws.cell(row=row_num, column=31, value=price)  # 含税单价
-            ws.cell(row=row_num, column=32, value=0)  # 税率
-            ws.cell(row=row_num, column=33, value="ANTMINER")  # 品牌/厂商
+            ws.cell(row=row_num, column=3, value=entity)
+            ws.cell(row=row_num, column=4, value="标准采购订单")
+            ws.cell(row=row_num, column=5, value=order_data["order_number"])
+            ws.cell(row=row_num, column=6, value=entity_config["currency"])
+            ws.cell(row=row_num, column=7, value="何宇川,")
+            ws.cell(row=row_num, column=8, value=supplier)
+            ws.cell(row=row_num, column=9, value=supplier_site)
+            ws.cell(row=row_num, column=10, value=source_subinv)
+            ws.cell(row=row_num, column=11, value=receiver)
+            ws.cell(row=row_num, column=12, value=dest_subinv)
+            ws.cell(row=row_num, column=13, value=bill_to)
+            ws.cell(row=row_num, column=14, value="付款方式一")
+            ws.cell(row=row_num, column=15, value="生产用料销售")
+            ws.cell(row=row_num, column=17, value="Y")
+            ws.cell(row=row_num, column=20, value="手工录入")
+            ws.cell(row=row_num, column=21, value=line_num)
+            ws.cell(row=row_num, column=22, value="BM系列")
+            ws.cell(row=row_num, column=23, value=model_code)
+            ws.cell(row=row_num, column=25, value="个")
+            ws.cell(row=row_num, column=26, value=quantity)
+            ws.cell(row=row_num, column=27, value=date.today())
+            ws.cell(row=row_num, column=28, value=date.today())
+            ws.cell(row=row_num, column=29, value=date.today())
+            ws.cell(row=row_num, column=30, value=price)
+            ws.cell(row=row_num, column=31, value=price)
+            ws.cell(row=row_num, column=32, value=0)
+            ws.cell(row=row_num, column=33, value="ANTMINER")
             
-            row_num += 1
             line_num += 1
     
     output_file.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(output_file)
+    wb.close()
     
-    # 保存（兼容xlsm中的图片等资源）
-    try:
-        wb.save(output_file)
-    except KeyError as e:
-        # openpyxl保存xlsm时可能遇到mimetype问题
-        # 直接修补openpyxl的manifest模块
-        print(f"保存xlsm时遇到问题({e})，尝试兼容保存...")
-        import mimetypes as _mt
-        # 注册缺失的mimetype
-        _mt.add_type('image/jpeg', '.JPG')
-        _mt.add_type('image/jpeg', '.jpg')
-        _mt.add_type('image/png', '.PNG')
-        _mt.add_type('image/png', '.png')
-        _mt.add_type('image/gif', '.GIF')
-        _mt.add_type('image/gif', '.gif')
-        _mt.add_type('image/bmp', '.BMP')
-        _mt.add_type('image/bmp', '.bmp')
-        _mt.add_type('application/x-msmetafile', '.EMF')
-        _mt.add_type('application/x-msmetafile', '.emf')
-        _mt.add_type('application/x-msmetafile', '.WMF')
-        _mt.add_type('application/x-msmetafile', '.wmf')
-        try:
-            wb.save(output_file)
-        except KeyError:
-            # 最后手段：修补openpyxl的manifest
-            from openpyxl.packaging import manifest
-            original_register = manifest.Manifest._register_mimetypes
-            def patched_register(self, filenames=None):
-                try:
-                    original_register(self, filenames)
-                except KeyError:
-                    # 忽略未知的mimetype扩展名
-                    pass
-            manifest.Manifest._register_mimetypes = patched_register
-            wb.save(output_file)
+    print(f"采购订单数据文件已生成: {output_file}")
+    return True
     wb.close()
     
     print(f"WebADI模板已填充: {output_file}")
@@ -817,7 +826,7 @@ def automate_oracle_import(template_file, coords=None):
 
 # ============== 邮件发送模块 ==============
 
-def send_result_email(result_data):
+def send_result_email(result_data, emails=None):
     """发送结果报告邮件（含附件：统计表格+采购订单模板）"""
     import smtplib
     from email.mime.text import MIMEText
@@ -867,20 +876,27 @@ def send_result_email(result_data):
     today_str = date.today().strftime("%Y%m%d")
     attachments = []
     
-    # 国内统计表
-    domestic_file = STATISTICS_DIR / "international_statistics_new.xlsx"
-    if domestic_file.exists():
-        attachments.append(("domestic_statistics.xlsx", domestic_file))
+    # 国内统计表：如果邮件有进口产品统计表附件，直接用附件
+    for email_data in emails:
+        for att_path in email_data.get("attachments", []):
+            if "进口产品统计表" in att_path or "进口产品" in att_path:
+                attachments.append(("domestic_statistics.xlsx", att_path))
+    
+    # 如果没有附件，用本地表格
+    if not any("domestic" in a[0] for a in attachments):
+        domestic_file = STATISTICS_DIR / "international_statistics_new.xlsx"
+        if domestic_file.exists():
+            attachments.append(("domestic_statistics.xlsx", domestic_file))
     
     # 海外统计表
     international_file = STATISTICS_DIR / "domestic_statistics.xlsx"
     if international_file.exists():
         attachments.append(("international_statistics.xlsx", international_file))
     
-    # 采购订单模板（所有订单汇总，.xlsm格式）
-    template_file = OUTPUT_DIR / f"purchase_order_{today_str}.xlsm"
+    # 采购订单数据文件（xlsx格式）
+    template_file = OUTPUT_DIR / f"purchase_order_{today_str}.xlsx"
     if template_file.exists():
-        attachments.append((f"purchase_order_{today_str}.xlsm", template_file))
+        attachments.append((f"purchase_order_{today_str}.xlsx", template_file))
     
     for filename, filepath in attachments:
         try:
@@ -937,7 +953,7 @@ def main():
         if not emails:
             print("今日无新邮件，退出")
             result_data["status"] = "无新邮件"
-            send_result_email(result_data)
+            send_result_email(result_data, emails)
             return
         
         # 2. 加载价格表
@@ -980,7 +996,7 @@ def main():
         if not all_orders:
             print("无有效订单信息，退出")
             result_data["status"] = "无有效订单"
-            send_result_email(result_data)
+            send_result_email(result_data, emails)
             return
         
         # 4. 生成订单号
@@ -1009,7 +1025,7 @@ def main():
         # 5. 所有订单汇总到一个WebADI模板
         print("\n[5] 汇总写入WebADI模板...")
         today_str = date.today().strftime("%Y%m%d")
-        template_output = OUTPUT_DIR / f"purchase_order_{today_str}.xlsm"
+        template_output = OUTPUT_DIR / f"purchase_order_{today_str}.xlsx"
         fill_webadi_template(all_orders, template_output)
         result_data["order_number"] = f"采购订单_{today_str}"
         
@@ -1041,7 +1057,7 @@ def main():
         
         # 7. 发送结果邮件
         print("\n[7] 发送结果邮件...")
-        send_result_email(result_data)
+        send_result_email(result_data, emails)
         
         print("\n" + "="*60)
         print("采购订单自动化完成")
@@ -1052,7 +1068,7 @@ def main():
         import traceback
         traceback.print_exc()
         result_data["status"] = f"失败: {str(e)}"
-        send_result_email(result_data)
+        send_result_email(result_data, emails)
 
 if __name__ == "__main__":
     main()
