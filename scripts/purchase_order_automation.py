@@ -312,25 +312,27 @@ def parse_order_info_from_email(email_body, subject):
         if model not in seen_models or quantity > seen_models[model]["quantity"]:
             seen_models[model] = {"model": model, "quantity": quantity}
     
-    # 提取价格（国内邮件中的报关单价）
-    # 格式：BM1374CC 780 PCS 38.37 或 报关单价列
-    price_pattern = r'(BM\d{4}[A-Z]{0,3}[\+\w]*)\s+(?:\d+)\s*(?:pcs|PCS|个|片)?\s*(\d+\.?\d*)'
-    price_matches = re.findall(price_pattern, email_body, re.IGNORECASE)
+    # 提取价格（仅国内邮件 - 进口产品统计表中的报关单价）
+    # 只有主题包含"进口产品统计表"的邮件才从正文提取价格
     price_map = {}
-    for pm in price_matches:
-        price_map[pm[0].upper().strip()] = float(pm[1])
-    
-    # 也可以从HTML表格提取价格（报关单价列）
-    html_price_pattern = r'(BM\d{4}[A-Z]{0,3}[\+\w]*)\s*</td>\s*<td[^>]*>\s*(\d+)\s*</td>\s*<td[^>]*>\s*PCS\s*</td>\s*<td[^>]*>\s*(\d+\.?\d*)'
-    html_price_matches = re.findall(html_price_pattern, email_body, re.IGNORECASE)
-    for hpm in html_price_matches:
-        model = hpm[0].upper().strip()
-        qty = int(hpm[1])
-        price = float(hpm[2])
-        price_map[model] = price
-        # 更正数量
-        if model in seen_models:
-            seen_models[model]["quantity"] = qty
+    if "进口产品统计表" in subject:
+        # 格式：BM1374CC 780 PCS 38.37 或 报关单价列
+        price_pattern = r'(BM\d{4}[A-Z]{0,3}[\+\w]*)\s+(?:\d+)\s*(?:pcs|PCS|个|片)?\s*(\d+\.?\d*)'
+        price_matches = re.findall(price_pattern, email_body, re.IGNORECASE)
+        for pm in price_matches:
+            price_map[pm[0].upper().strip()] = float(pm[1])
+        
+        # 也可以从HTML表格提取价格（报关单价列）
+        html_price_pattern = r'(BM\d{4}[A-Z]{0,3}[\+\w]*)\s*</td>\s*<td[^>]*>\s*(\d+)\s*</td>\s*<td[^>]*>\s*PCS\s*</td>\s*<td[^>]*>\s*(\d+\.?\d*)'
+        html_price_matches = re.findall(html_price_pattern, email_body, re.IGNORECASE)
+        for hpm in html_price_matches:
+            model = hpm[0].upper().strip()
+            qty = int(hpm[1])
+            price = float(hpm[2])
+            price_map[model] = price
+            # 更正数量
+            if model in seen_models:
+                seen_models[model]["quantity"] = qty
     
     for model, data in seen_models.items():
         item = {"model": data["model"], "quantity": data["quantity"]}
@@ -345,15 +347,16 @@ def parse_order_info_from_email(email_body, subject):
             order_info["entity"] = entity_code
             break
     
-    # 如果没找到主体，根据内容推断
+    # 如果没找到主体，根据内容推断（同时检查主题）
+    combined = email_body + subject
     if not order_info["entity"]:
-        if "深圳" in email_body or "SZ" in email_body:
+        if "深圳" in combined or "SZ" in combined:
             order_info["entity"] = "SZK"
-        elif "新加坡" in email_body or "SG" in email_body:
+        elif "新加坡" in combined or "SG" in combined or "ONETEC" in combined or "出口" in combined:
             order_info["entity"] = "DPT"
-        elif "北京" in email_body or "BJ" in email_body:
+        elif "北京" in combined or "BJ" in combined:
             order_info["entity"] = "BJK"
-        elif "海南" in email_body:
+        elif "海南" in combined:
             order_info["entity"] = "HSJ"
     
     # 解析地址
