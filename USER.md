@@ -2,11 +2,10 @@
 
 _Learn about the person you're helping. Update this as you go._
 
-- **Name:**
-- **What to call them:**
+- **姓名:** 
 - **Pronouns:** _(optional)_
-- **Timezone:**
-- **Notes:**
+- **时区:** Asia/Shanghai
+- **回复偏好:** 
 
 ## Context
 
