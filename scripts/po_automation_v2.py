@@ -45,6 +45,8 @@ MODEL_CODE_MAP = {}
 
 # 价格对照表（从价格表加载）
 MODEL_PRICE_MAP = {}
+# 物料编码→价格对照表（从价目表0601 sheet加载，精确匹配）
+CODE_PRICE_MAP = {}
 
 # ==================== 邮件读取 ====================
 def decode_email_header(header):
@@ -90,24 +92,38 @@ def load_model_code_map():
         print(f"  加载编码对照表失败: {e}")
 
 def load_price_map():
-    """从价格表加载价格对照"""
-    global MODEL_PRICE_MAP
+    """从价格表加载价格对照（价目表0601 sheet 按物料编码精确匹配）"""
+    global MODEL_PRICE_MAP, CODE_PRICE_MAP
     prices_file = os.path.join(WORKSPACE, "data/prices/current_prices.xlsx")
     if not os.path.exists(prices_file):
         print(f"  价格表不存在: {prices_file}")
         return
     try:
         wb = load_workbook(prices_file, data_only=True)
-        ws = wb.active
+        
+        # 1. 从 PO sheet 加载型号→价格（fallback用）
+        ws_po = wb.active
         prices = {}
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            model = row[0]  # A列=芯片型号
-            price = row[3] if len(row) > 3 else None  # D列=价格
+        for row in ws_po.iter_rows(min_row=2, values_only=True):
+            model = row[0]
+            price = row[3] if len(row) > 3 else None
             if model and price:
                 prices[str(model).upper().strip()] = float(price)
-        wb.close()
         MODEL_PRICE_MAP = prices
-        print(f"  已加载 {len(MODEL_PRICE_MAP)} 条价格数据")
+        
+        # 2. 从 价目表0601 sheet 加载物料编码→价格（精确匹配）
+        code_prices = {}
+        if '价目表0601' in wb.sheetnames:
+            ws_price = wb['价目表0601']
+            for row in ws_price.iter_rows(min_row=2, values_only=True):
+                code = row[2]  # C列=项目编号（物料编码）
+                price = row[9]  # J列=值（价格）
+                if code and price:
+                    code_prices[str(code).strip()] = float(price)
+        CODE_PRICE_MAP = code_prices
+        
+        wb.close()
+        print(f"  已加载 {len(MODEL_PRICE_MAP)} 条型号价格, {len(CODE_PRICE_MAP)} 条编码价格")
     except Exception as e:
         print(f"  加载价格表失败: {e}")
 
@@ -121,13 +137,18 @@ def get_model_code(model):
             return MODEL_CODE_MAP[base]
     return None
 
-def get_model_price(model):
-    """根据型号获取价格（支持前缀匹配，如BM1374CC匹配BM1374）"""
+def get_model_price(model, material_code=None):
+    """根据型号获取价格。优先按物料编码从CODE_PRICE_MAP查，否则按型号前缀匹配。
+    例如 BM1368PB(编码Y31010515) → CODE_PRICE_MAP → 4.0901(BM1368+)
+    而不是前缀匹配 BM1368 → 5.0536"""
+    # 1. 优先按物料编码精确查找（价目表0601 sheet）
+    if material_code and material_code in CODE_PRICE_MAP:
+        return CODE_PRICE_MAP[material_code]
+    
+    # 2. Fallback: 按型号前缀匹配
     model_upper = model.upper().strip()
-    # 先精确匹配
     if model_upper in MODEL_PRICE_MAP:
         return MODEL_PRICE_MAP[model_upper]
-    # 前缀匹配：去掉后缀字母，用基础型号查
     for length in range(len(model_upper), 5, -1):
         prefix = model_upper[:length]
         if prefix in MODEL_PRICE_MAP:
@@ -283,7 +304,7 @@ def parse_domestic_from_attachment(attachment_path):
             item = {
                 "model": str(model).upper().strip(),
                 "qty": int(qty) if qty else 0,
-                "price": float(price) if price else get_model_price(str(model)),
+                "price": float(price) if price else get_model_price(str(model), None),  # 附件优先用自带价格
                 "supplier": str(supplier).strip() if supplier else "",
                 "material_code": "",
                 "tax_agent": tax_agent_from_att,
@@ -346,8 +367,8 @@ def parse_qianhai_from_email(body, subject):
         model = m[2].upper().strip()  # 型号
         qty = int(m[3].replace(',', ''))  # 数量
         
-        # 价格从价格表获取（与海外一致），不用邮件正文中的价格
-        price = get_model_price(model)
+        # 价格从价格表获取，优先按物料编码精确匹配
+        price = get_model_price(model, code)
         if not price:
             # fallback to email body
             price = float(m[4])
@@ -406,7 +427,8 @@ def parse_overseas_from_email(body, subject):
         supplier = "SPILSZ"
 
     for model, qty in seen.items():
-        price = get_model_price(model)
+        code = get_model_code(model)
+        price = get_model_price(model, code)
         if not price:
             print(f"    ⚠ 未找到 {model} 的价格，需手动填写")
             price = 0
