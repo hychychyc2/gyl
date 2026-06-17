@@ -387,18 +387,18 @@ def parse_qianhai_from_email(body, subject):
     
     return items
 
-def parse_overseas_from_email(body, subject):
-    """从邮件正文解析海外订单"""
+def parse_overseas_from_email(body, subject, attachments=None):
+    """从邮件正文或附件解析海外订单"""
     print(f"  解析海外订单邮件: {subject}")
 
     items = []
-    # 模式: BMxxxxXX 数量
+    seen = {}
+    
+    # 1. 从正文提取 BM 型号+数量
     patterns = [
         r'(BM\d{4}[A-Z]{0,3}[\+\w]*)\s*[:\s]\s*(\d+)\s*(?:pcs|PCS|个|片)?',
         r'(BM\d{4}[A-Z]{0,3}[\+\w]*)\s+(\d{3,})',
     ]
-
-    seen = {}
     for pat in patterns:
         for m in re.findall(pat, body, re.IGNORECASE):
             model = m[0].upper().strip()
@@ -414,17 +414,79 @@ def parse_overseas_from_email(body, subject):
         destination = "泰国ONETEC"
     elif "新加坡" in body:
         destination = "新加坡比特"
+    elif "墨西哥" in body or "墨西哥" in subject:
+        destination = "墨西哥欧陆通"
     elif "泰国" in body:
         destination = "泰国"
 
-    # 解析供应商
+    # 解析供应商 - 优先标题，其次附件文件名，最后正文
     supplier = ""
-    if "XJ" in body or "信佳" in body:
-        supplier = "XJ"
-    elif "NJVT" in body or "南京" in body:
-        supplier = "NJVT"
-    elif "SPILSZ" in body:
-        supplier = "SPILSZ"
+    # 1. 标题
+    for kw in ["XJ", "NJVT", "SPILSZ", "ASECL", "ASE", "HN"]:
+        if kw in subject:
+            supplier = kw
+            break
+    # 2. 附件文件名
+    if not supplier and attachments:
+        for att in attachments:
+            att_name = os.path.basename(att).upper()
+            for kw in ["XJ", "NJVT", "SPILSZ", "ASECL", "ASE", "HN"]:
+                if kw in att_name:
+                    supplier = kw
+                    break
+            if supplier:
+                break
+    # 3. 正文
+    if not supplier:
+        for kw in ["XJ", "信佳", "NJVT", "南京", "SPILSZ", "HN", "海纳"]:
+            if kw in body:
+                if kw == "信佳":
+                    supplier = "XJ"
+                elif kw == "南京":
+                    supplier = "NJVT"
+                elif kw == "海纳":
+                    supplier = "HN"
+                else:
+                    supplier = kw
+                break
+    
+    # 4. 如果正文没有型号数据，从附件提取
+    if not seen and attachments:
+        print(f"    正文无型号数据，尝试从附件提取...")
+        for att in attachments:
+            if not att.endswith(('.xlsx', '.xls')):
+                continue
+            try:
+                att_wb = load_workbook(att, data_only=True)
+                for sn in att_wb.sheetnames:
+                    if '发票' not in sn and '箱单' not in sn:
+                        continue
+                    ws = att_wb[sn]
+                    for r in range(1, ws.max_row + 1):
+                        for c in range(1, min(ws.max_column + 1, 12)):
+                            val = str(ws.cell(row=r, column=c).value or '')
+                            bm = re.search(r'(BM\d{4}[A-Z]{0,3})', val)
+                            if bm:
+                                model = bm.group(1).upper().strip()
+                                # 找同一行的数量
+                                for c2 in range(c + 1, min(ws.max_column + 1, c + 6)):
+                                    qty_val = ws.cell(row=r, column=c2).value
+                                    if qty_val and isinstance(qty_val, (int, float)) and qty_val > 100:
+                                        # 确认是数量（不是价格）
+                                        if model not in seen or int(qty_val) > seen[model]:
+                                            seen[model] = int(qty_val)
+                            # Also try TOTAL row
+                            if 'TOTAL' in val.upper() and not seen:
+                                for c3 in range(1, c):
+                                    prev = str(ws.cell(row=r-2, column=c3).value or '')
+                                    if not seen:
+                                        # Look at rows above for model
+                                        pass
+                att_wb.close()
+                if seen:
+                    break
+            except Exception as e:
+                print(f"    附件解析失败: {e}")
 
     for model, qty in seen.items():
         code = get_model_code(model)
@@ -513,9 +575,15 @@ def fetch_and_parse_orders():
         is_domestic = attachments and ("进口产品统计表" in subject)
         # 主题含"进口产品统计表"但无附件 → 跳过（附件已在其他邮件中）
         is_domestic_no_att = (not attachments) and ("进口产品统计表" in subject)
-        # 主题含海外关键词且无国内标识 → 海外订单
-        overseas_keywords = ["出口", "出货通知", "海外", "DPT"]
-        is_overseas = any(kw in subject for kw in overseas_keywords) and not is_domestic
+        # 前海保税区结转 → 单独的解析路径（不识别为海外或国内）
+        is_qianhai = "区间结转" in subject or "前海" in subject
+        # 海外关键词：出口/出货通知/海外/DPT/清关资料/墨西哥
+        overseas_keywords = ["出口", "出货通知", "海外", "DPT", "清关资料", "墨西哥"]
+        is_overseas = any(kw in subject for kw in overseas_keywords) and not is_domestic and not is_qianhai
+        # 有出口相关附件但没命中海外关键字 → 也尝试解析
+        has_overseas_attachment = attachments and any(
+            kw in att for att in attachments for kw in ["出口", "墨西哥", "ONETEC", "群光"]
+        )
 
         # 国内订单：从附件解析
         if is_domestic:
@@ -535,16 +603,27 @@ def fetch_and_parse_orders():
             print(f"    主题含'进口产品统计表'但无附件，跳过")
             continue
 
-        # 前海保税区结转 → 区间结转邮件（归入海外类）
-        if "区间结转" in subject or "前海" in subject:
+        # 前海保税区结转 → 区间结转邮件，按邮件DATE过滤日期避免跨天重复
+        if is_qianhai:
+            # 提取邮件日期，只处理当天的前海邮件
+            em_date_str = em.get("date", "")
+            # 尝试从邮件Date头提取日期
+            from email.utils import parsedate_to_datetime as pdt
+            try:
+                em_dt = pdt(em_date_str).date()
+                if em_dt != TODAY_DATE:
+                    print(f"    前海邮件日期={em_dt}≠今天={TODAY_DATE}，跳过")
+                    continue
+            except:
+                pass  # 无法解析日期则继续处理
             items = parse_qianhai_from_email(body, subject)
             if items:
                 overseas_items.extend(items)
             continue
 
-        # 海外订单：从正文解析
-        if is_overseas or (not is_domestic and not attachments):
-            items = parse_overseas_from_email(body, subject)
+        # 海外订单：从正文解析 OR 有墨西哥/出口附件
+        if is_overseas or has_overseas_attachment or (not is_domestic and not is_qianhai and not attachments):
+            items = parse_overseas_from_email(body, subject, attachments)
             if items:
                 overseas_items.extend(items)
 
