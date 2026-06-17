@@ -324,13 +324,13 @@ def parse_qianhai_from_email(body, subject):
     
     # 从邮件标题提取供应商/测试厂
     supplier = ""
-    for kw in ["NJVT", "XJ", "SPILSZ", "ASECL", "ASE"]:
+    for kw in ["NJVT", "XJ", "SPILSZ", "ASECL", "ASE", "HN"]:
         if kw in subject or kw in body:
             supplier = kw
             break
     if not supplier:
         # 从正文提取
-        for kw in ["NJVT", "XJ", "SPILSZ", "ASECL", "ASE"]:
+        for kw in ["NJVT", "XJ", "SPILSZ", "ASECL", "ASE", "HN"]:
             if kw in body:
                 supplier = kw
                 break
