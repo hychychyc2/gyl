@@ -4,7 +4,7 @@
     "password": "-DxpOD5kkN)(RuPgAK-p",
     "imap_server": "imap.appia.vip",
     "root_folder": "INBOX/系统邮件",
-    "search_criteria": "SINCE \"16-Jun-2026\" BEFORE \"17-Jun-2026\"",
+    "search_criteria": "SINCE \"17-Jun-2026\" BEFORE \"18-Jun-2026\"",
     "recursive_folders": true,
     "exclude_folders": [
       "垃圾邮件",
@@ -23,12 +23,17 @@
     "subject": "shippinglist汇总",
     "body": "您好，附件是最新自动处理完成的最近shippinglist汇总报表。",
     "to_recipients": [
-      "yuchuan.he@casue.com"
+      "fubing.zuo@casue.com",
+      "yujia.cheng@casue.com",
+      "haixia.lu@casue.com",
+      "pc_group@casue.com",
+      "xinyan.song@casue.com",
+      "xiaofan.yang@casue.com"
     ],
     "cc_recipients": []
   },
   "out_file": {
-    "file_path": "E:\\供应链\\芯片\\总表\\芯片齐套表_lastest.xlsx",
+    "file_path": "E:\\供应链\\芯片\\总表\\出货明细表_lastest.xlsx",
     "backup": true
   },
   "rules": [
@@ -46,36 +51,19 @@
           "K",
           "C",
           "L-N",
-          "D"
-        ],
-        "filter_conditions": [
-          {
-            "col": "N",
-            "operator": "not_in",
-            "value": [
-              "ASECL",
-              "XJ",
-              "SPILSZ",
-              "JSCC",
-              "NJVT",
-              "WX-HN",
-              "NJ V-Test",
-              "NJVT",
-              "矽佳",
-              "入库重投"
-            ]
-          }
+          "D",
+          "R"
         ]
       },
       "local_rule": {
         "sheet": "出货明细表",
         "header_row": 2,
         "cols_range": [
-          "B-L"
+          "B-M"
         ],
         "write_mode": "append2",
         "unique_key_cols": [
-          "B-L"
+          "B-M"
         ],
         "deduplicate": true,
         "force_formula_cols": [
@@ -131,36 +119,19 @@
           "K",
           "C",
           "L-N",
-          "D"
-        ],
-        "filter_conditions": [
-          {
-            "col": "N",
-            "operator": "not_in",
-            "value": [
-              "ASECL",
-              "XJ",
-              "SPILSZ",
-              "JSCC",
-              "NJVT",
-              "WX-HN",
-              "NJ V-Test",
-              "NJVT",
-              "矽佳",
-              "入库重投"
-            ]
-          }
+          "D",
+          "R"
         ]
       },
       "local_rule": {
         "sheet": "出货明细表",
         "header_row": 2,
         "cols_range": [
-          "B-L"
+          "B-M"
         ],
         "write_mode": "append2",
         "unique_key_cols": [
-          "B-L"
+          "B-M"
         ],
         "deduplicate": true,
         "force_formula_cols": [
@@ -216,36 +187,19 @@
           "J-K",
           "B",
           "M-O",
-          "D"
-        ],
-        "filter_conditions": [
-          {
-            "col": "O",
-            "operator": "not_in",
-            "value": [
-              "ASECL",
-              "XJ",
-              "SPILSZ",
-              "JSCC",
-              "NJVT",
-              "WX-HN",
-              "NJ V-Test",
-              "NJVT",
-              "矽佳",
-              "入库重投"
-            ]
-          }
+          "D",
+          "P"
         ]
       },
       "local_rule": {
         "sheet": "出货明细表",
         "header_row": 2,
         "cols_range": [
-          "B-L"
+          "B-M"
         ],
         "write_mode": "append2",
         "unique_key_cols": [
-          "B-L"
+          "B-M"
         ],
         "deduplicate": true,
         "force_formula_cols": [
@@ -307,35 +261,20 @@
           "J-K",
           "B",
           "M-O",
-          "D"
-        ],
-        "filter_conditions": [
-          {
-            "col": "O",
-            "operator": "not_in",
-            "value": [
-              "ASECL",
-              "XJ",
-              "SPILSZ",
-              "JSCC",
-              "NJVT",
-              "WX-HN",
-              "NJ V-Test",
-              "NJVT",
-              "矽佳"
-            ]
-          }
+          "D",
+          "P",
+          "H"
         ]
       },
       "local_rule": {
         "sheet": "出货明细表",
         "header_row": 2,
         "cols_range": [
-          "B-L"
+          "B-N"
         ],
         "write_mode": "append2",
         "unique_key_cols": [
-          "B-L"
+          "B-N"
         ],
         "deduplicate": true,
         "force_formula_cols": [
@@ -397,35 +336,19 @@
           "J-K",
           "B",
           "M-O",
-          "D"
-        ],
-        "filter_conditions": [
-          {
-            "col": "O",
-            "operator": "not_in",
-            "value": [
-              "ASECL",
-              "XJ",
-              "SPILSZ",
-              "JSCC",
-              "NJVT",
-              "WX-HN",
-              "NJ V-Test",
-              "NJVT",
-              "矽佳"
-            ]
-          }
+          "D",
+          "P"
         ]
       },
       "local_rule": {
         "sheet": "出货明细表",
         "header_row": 2,
         "cols_range": [
-          "B-L"
+          "B-M"
         ],
         "write_mode": "append2",
         "unique_key_cols": [
-          "B-L"
+          "B-M"
         ],
         "deduplicate": true,
         "force_formula_cols": [
@@ -482,35 +405,84 @@
         "cols_range": [
           "B-H",
           "K-M",
-          "O"
-        ],
-        "filter_conditions": [
-          {
-            "col": "M",
-            "operator": "not_in",
-            "value": [
-              "ASECL",
-              "XJ",
-              "SPILSZ",
-              "JSCC",
-              "NJVT",
-              "WX-HN",
-              "NJ V-Test",
-              "NJVT",
-              "矽佳"
-            ]
-          }
+          "O",
+          "W"
         ]
       },
       "local_rule": {
         "sheet": "出货明细表",
         "header_row": 2,
         "cols_range": [
-          "B-L"
+          "B-M"
         ],
         "write_mode": "append2",
         "unique_key_cols": [
-          "B-L"
+          "B-M"
+        ],
+        "deduplicate": true,
+        "force_formula_cols": [
+          "N",
+          "O",
+          "P",
+          "Q",
+          "R",
+          "T",
+          "U",
+          "V",
+          "W",
+          "X",
+          "Y",
+          "Z",
+          "AA",
+          "AB",
+          "AC",
+          "AD",
+          "AE",
+          "AF",
+          "AG",
+          "AH",
+          "AI"
+        ]
+      },
+      "data_process_rules": [
+        {
+          "type": "slice_combine",
+          "col": "B",
+          "slice_rule": "[0:10]",
+          "combine_str": ""
+        },
+        {
+          "type": "replace_str",
+          "col": "B",
+          "old_str": "/",
+          "new_str": "-"
+        }
+      ]
+    },
+    {
+      "attach_rule": {
+        "match_key": "SHIP_2026-",
+        "suffix": ".xlsx",
+        "sheet": "2026chanhua",
+        "header_row": 2,
+        "cols_range": [
+          "B-E",
+          "I",
+          "G-H",
+          "K-M",
+          "O",
+          "W"
+        ]
+      },
+      "local_rule": {
+        "sheet": "出货明细表",
+        "header_row": 2,
+        "cols_range": [
+          "B-M"
+        ],
+        "write_mode": "append2",
+        "unique_key_cols": [
+          "B-M"
         ],
         "deduplicate": true,
         "force_formula_cols": [
@@ -566,36 +538,87 @@
           "B",
           "N",
           "O-P",
-          "D"
-        ],
-        "filter_conditions": [
-          {
-            "col": "P",
-            "operator": "not_in",
-            "value": [
-              "ASECL",
-              "XJ",
-              "SPILSZ",
-              "JSCC",
-              "NJVT",
-              "WX-HN",
-              "NJ V-Test",
-              "NJVT",
-              "矽佳",
-              "入库重投"
-            ]
-          }
+          "D",
+          "T"
         ]
       },
       "local_rule": {
         "sheet": "出货明细表",
         "header_row": 2,
         "cols_range": [
-          "B-L"
+          "B-M"
         ],
         "write_mode": "append2",
         "unique_key_cols": [
-          "B-L"
+          "B-M"
+        ],
+        "deduplicate": true,
+        "force_formula_cols": [
+          "N",
+          "O",
+          "P",
+          "Q",
+          "R",
+          "T",
+          "U",
+          "V",
+          "W",
+          "X",
+          "Y",
+          "Z",
+          "AA",
+          "AB",
+          "AC",
+          "AD",
+          "AE",
+          "AF",
+          "AG",
+          "AH",
+          "AI"
+        ]
+      },
+      "data_process_rules": [
+        {
+          "type": "slice_combine",
+          "col": "A",
+          "slice_rule": "[0:10]",
+          "combine_str": ""
+        },
+        {
+          "type": "replace_str",
+          "col": "A",
+          "old_str": "/",
+          "new_str": "-"
+        }
+      ]
+    },
+    {
+      "attach_rule": {
+        "match_key": "出货报表SHIPMENT",
+        "suffix": ".xlsx",
+        "sheet": "bit",
+        "header_row": 1,
+        "cols_range": [
+          "A",
+          "E",
+          "H-J",
+          "L",
+          "B",
+          "N",
+          "O-P",
+          "D",
+          "T"
+        ]
+      },
+      "local_rule": {
+        "sheet": "出货明细表",
+        "header_row": 2,
+        "cols_range": [
+          "B-M"
+        ],
+        "write_mode": "append2",
+        "unique_key_cols": [
+          "B-M"
         ],
         "deduplicate": true,
         "force_formula_cols": [
@@ -650,36 +673,19 @@
           "C",
           "L",
           "P-Q",
-          "D"
-        ],
-        "filter_conditions": [
-          {
-            "col": "Q",
-            "operator": "not_in",
-            "value": [
-              "ASECL",
-              "XJ",
-              "SPILSZ",
-              "JSCC",
-              "NJVT",
-              "WX-HN",
-              "NJ V-Test",
-              "NJVT",
-              "矽佳",
-              "入库重投"
-            ]
-          }
+          "D",
+          "N"
         ]
       },
       "local_rule": {
         "sheet": "出货明细表",
         "header_row": 2,
         "cols_range": [
-          "B-L"
+          "B-M"
         ],
         "write_mode": "append2",
         "unique_key_cols": [
-          "B-L"
+          "B-M"
         ],
         "deduplicate": true,
         "force_formula_cols": [
