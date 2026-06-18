@@ -339,21 +339,36 @@ def parse_domestic_from_attachment(attachment_path):
     wb.close()
     return all_items
 
-def parse_qianhai_from_email(body, subject):
+def parse_qianhai_from_email(body, subject, attachments=None):
     """从邮件正文解析前海保税区结转订单（区间结转），归入海外类"""
     print(f"  解析前海区间结转邮件: {subject}")
     
-    # 从邮件标题提取供应商/测试厂
+    # 供应商识别优先级：标题 > 附件文件名 > 正文
     supplier = ""
-    for kw in ["NJVT", "XJ", "SPILSZ", "ASECL", "ASE", "HN"]:
-        if kw in subject or kw in body:
+    all_kw = ["NJVT", "XJ", "SPILSZ", "ASECL", "ASE", "HN"]
+    # 1. 标题
+    for kw in all_kw:
+        if kw in subject:
             supplier = kw
             break
+    # 2. 附件文件名
+    if not supplier and attachments:
+        for att in attachments:
+            att_name = os.path.basename(att).upper()
+            for kw in all_kw:
+                if kw in att_name:
+                    supplier = kw
+                    break
+            if supplier:
+                break
+    # 3. 正文（同时检查"海纳"映射到HN）
     if not supplier:
-        # 从正文提取
-        for kw in ["NJVT", "XJ", "SPILSZ", "ASECL", "ASE", "HN"]:
+        for kw in all_kw + ["海纳"]:
             if kw in body:
-                supplier = kw
+                if kw == "海纳":
+                    supplier = "HN"
+                else:
+                    supplier = kw
                 break
     
     items = []
@@ -616,7 +631,7 @@ def fetch_and_parse_orders():
                     continue
             except:
                 pass  # 无法解析日期则继续处理
-            items = parse_qianhai_from_email(body, subject)
+            items = parse_qianhai_from_email(body, subject, attachments)
             if items:
                 overseas_items.extend(items)
             continue
