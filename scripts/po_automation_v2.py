@@ -248,11 +248,22 @@ def parse_domestic_from_attachment(attachment_path):
     """从邮件附件Excel提取国内订单（进口产品统计表）"""
     print(f"  解析国内订单附件: {os.path.basename(attachment_path)}")
     today_int = int(TODAY)
+    wb = None
     try:
         wb = load_workbook(attachment_path, data_only=True)
-    except Exception as e:
-        print(f"  加载附件失败: {e}")
-        return []
+    except Exception:
+        # Fallback: try xlrd for .xls files
+        if attachment_path.endswith('.xls'):
+            try:
+                import xlrd
+                print(f"    尝试用 xlrd 读取 .xls 文件...")
+                return _parse_domestic_xls(attachment_path)
+            except Exception as e2:
+                print(f"    加载附件失败 (xlrd also failed): {e2}")
+                return []
+        else:
+            print(f"    加载附件失败")
+            return []
 
     # 各实体sheet的列配置
     sheet_configs = {
@@ -337,6 +348,50 @@ def parse_domestic_from_attachment(attachment_path):
             print(f"    {sheet_name}: {item['model']} {item['qty']} PCS @ {item['price']} USD, 供应商={item['supplier']}")
 
     wb.close()
+    return all_items
+
+def _parse_domestic_xls(attachment_path):
+    """xlr fallback for .xls files"""
+    import xlrd
+    today_int = int(TODAY)
+    wb = xlrd.open_workbook(attachment_path)
+    # .xls files from 单抬头报关 typically have Sheet1 with headers:
+    # 序号|月份|进口主体|下单日期|销售主体|协议|供应商|型号|数量|单位|报关单价|...|物料编码/箱数
+    all_items = []
+    for sn in wb.sheet_names():
+        ws = wb.sheet_by_name(sn)
+        if ws.nrows < 2:
+            continue
+        for r in range(1, ws.nrows):
+            row_date = ws.cell_value(r, 3)  # D列=下单日期
+            if not row_date:
+                continue
+            try:
+                d = int(row_date)
+                if d != today_int:
+                    continue
+            except:
+                continue
+            model = str(ws.cell_value(r, 7)).strip()  # H列=型号
+            qty = ws.cell_value(r, 8)  # I列=数量
+            price = ws.cell_value(r, 10)  # K列=报关单价
+            supplier = str(ws.cell_value(r, 6)).strip()  # G列=供应商
+            if not model or not qty:
+                continue
+            item = {
+                "model": model.upper(),
+                "qty": int(qty) if qty else 0,
+                "price": float(price) if price else get_model_price(model, None),
+                "supplier": supplier,
+                "material_code": "",
+                "tax_agent": "世纪通",
+                "po": "",
+                "so": "",
+                "date": str(int(row_date)),
+            }
+            item["material_code"] = get_model_code(item["model"]) or ""
+            all_items.append(item)
+            print(f"    {sn}: {item['model']} {item['qty']} PCS @ {item['price']} USD, 供应商={item['supplier']}")
     return all_items
 
 def parse_qianhai_from_email(body, subject, attachments=None):
