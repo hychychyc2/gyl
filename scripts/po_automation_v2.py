@@ -384,7 +384,7 @@ def _parse_domestic_xls(attachment_path):
                 "price": float(price) if price else get_model_price(model, None),
                 "supplier": supplier,
                 "material_code": "",
-                "tax_agent": "世纪通",
+                "tax_agent": "",
                 "po": "",
                 "so": "",
                 "date": str(int(row_date)),
