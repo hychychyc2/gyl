@@ -2,6 +2,17 @@
 
 ## 重要教训
 
+### 2026-06-25: .xls 解析必须完全复用 openpyxl 路径的 item 结构
+
+`.xls` 文件的 xlrd fallback 必须放在 `parse_domestic_from_attachment()` 函数内部，
+构建的 item 字段要与 openpyxl 路径**完全一致**（不能多字段也不能少字段），
+不能让 `generate_xlsm()` 收到不同结构的 item。
+
+**当前能正常工作的代码版本：5462d95**
+- 验证通过的场景：5条国内(.xls) + 5条海外，10行xlsm正常打开
+- HTML/XML全部通过校验
+- 业务逻辑：PO号/编码/型号/数量/价格/供应商/目的地全部正确
+
 ### 2026-06-22: 禁止手写 xlsm rebuild
 
 之前多次尝试手写简化版 `generate_xlsm()` 来 re生成采购订单模板，结果每次都出现 XML 格式错误、空行拼接 bug（列名和行号混导致格式损坏）、sharedStrings 索引越界等问题。

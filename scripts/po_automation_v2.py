@@ -359,7 +359,7 @@ def parse_domestic_from_attachment(attachment_path):
                 if ta:
                     tax_agent_from_att = str(ta).strip()
             if not tax_agent_from_att:
-                tax_agent_from_att = "世纪通"  # fallback
+                tax_agent_from_att = ""
 
             item = {
                 "model": str(model).upper().strip(),
@@ -447,7 +447,7 @@ def _parse_domestic_xlrd(attachment_path):
                 "price": float(price) if price else get_model_price(model, None),
                 "supplier": supplier,
                 "material_code": '',
-                "tax_agent": '世纪通',
+                "tax_agent": "",
                 "po": '',
                 "so": '',
                 "date": str(int(d)) if 'd' in dir() else TODAY,
