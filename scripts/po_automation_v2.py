@@ -248,6 +248,12 @@ def parse_domestic_from_attachment(attachment_path):
     """从邮件附件Excel提取国内订单（进口产品统计表）"""
     print(f"  解析国内订单附件: {os.path.basename(attachment_path)}")
     today_int = int(TODAY)
+    
+    # .xls files: skip with warning (single-header customs, data added manually)
+    if attachment_path.endswith('.xls'):
+        print(f"    .xls格式暂不支持自动解析，请手动补充数据到统计表")
+        return []
+    
     try:
         wb = load_workbook(attachment_path, data_only=True)
     except Exception as e:
@@ -337,6 +343,64 @@ def parse_domestic_from_attachment(attachment_path):
             print(f"    {sheet_name}: {item['model']} {item['qty']} PCS @ {item['price']} USD, 供应商={item['supplier']}")
 
     wb.close()
+    return all_items
+
+def _parse_domestic_xlrd(attachment_path):
+    """xlr fallback for .xls - returns items IDENTICAL to openpyxl path"""
+    import xlrd
+    today_int = int(TODAY)
+    wb = xlrd.open_workbook(attachment_path)
+    all_items = []
+    for sn in wb.sheet_names():
+        ws = wb.sheet_by_name(sn)
+        if ws.nrows < 2:
+            continue
+        # Find column indices from header row
+        headers = [str(ws.cell_value(0, c)).strip() for c in range(ws.ncols)]
+        def find_col(*keywords):
+            for c, h in enumerate(headers):
+                for kw in keywords:
+                    if kw in h:
+                        return c
+            return -1
+        col_model = find_col('型号')
+        col_qty = find_col('数量')
+        col_price = find_col('报关单价')
+        col_supplier = find_col('供应商')
+        # Date column: try '下单日期' first, then '进口日期'
+        col_date = find_col('下单日期', '进口日期')
+        if col_model < 0 or col_qty < 0:
+            continue
+        for r in range(1, ws.nrows):
+            if col_date >= 0:
+                row_date = ws.cell_value(r, col_date)
+                try:
+                    d = int(row_date)
+                    if d != today_int:
+                        continue
+                except:
+                    continue
+            model = str(ws.cell_value(r, col_model)).strip()
+            qty = ws.cell_value(r, col_qty)
+            if not model or not qty:
+                continue
+            model = model.upper()
+            price = ws.cell_value(r, col_price) if col_price >= 0 else None
+            supplier = str(ws.cell_value(r, col_supplier)).strip() if col_supplier >= 0 else ''
+            item = {
+                "model": model,
+                "qty": int(qty) if qty else 0,
+                "price": float(price) if price else get_model_price(model, None),
+                "supplier": supplier,
+                "material_code": '',
+                "tax_agent": '世纪通',
+                "po": '',
+                "so": '',
+                "date": str(int(d)) if 'd' in dir() else TODAY,
+            }
+            item["material_code"] = get_model_code(model) or ''
+            all_items.append(item)
+            print(f"    {sn}: {item['model']} {item['qty']} PCS @ {item['price']} USD, 供应商={item['supplier']}")
     return all_items
 
 def parse_qianhai_from_email(body, subject, attachments=None):
