@@ -407,7 +407,7 @@ def _parse_domestic_xls(attachment_path):
             price = ws.cell_value(r, col_price) if col_price >= 0 else None
             supplier = str(ws.cell_value(r, col_supplier)).strip() if col_supplier >= 0 else ""
             code = str(ws.cell_value(r, col_code)).strip() if col_code >= 0 else ""
-            po = str(ws.cell_value(r, col_po)).strip() if col_po >= 0 else ""
+            po = ""  # 不从.xls文件读取PO号，让系统自动生成
             so = str(ws.cell_value(r, col_so)).strip() if col_so >= 0 else ""
             item = {
                 "model": model.upper(),
