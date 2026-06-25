@@ -248,7 +248,6 @@ def parse_domestic_from_attachment(attachment_path):
     """从邮件附件Excel提取国内订单（进口产品统计表）"""
     print(f"  解析国内订单附件: {os.path.basename(attachment_path)}")
     today_int = int(TODAY)
-    wb = None
     try:
         wb = load_workbook(attachment_path, data_only=True)
     except Exception as e:
@@ -339,7 +338,6 @@ def parse_domestic_from_attachment(attachment_path):
 
     wb.close()
     return all_items
-
 
 def parse_qianhai_from_email(body, subject, attachments=None):
     """从邮件正文解析前海保税区结转订单（区间结转），归入海外类"""
