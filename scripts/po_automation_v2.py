@@ -251,19 +251,9 @@ def parse_domestic_from_attachment(attachment_path):
     wb = None
     try:
         wb = load_workbook(attachment_path, data_only=True)
-    except Exception:
-        # Fallback: try xlrd for .xls files
-        if attachment_path.endswith('.xls'):
-            try:
-                import xlrd
-                print(f"    尝试用 xlrd 读取 .xls 文件...")
-                return _parse_domestic_xls(attachment_path)
-            except Exception as e2:
-                print(f"    加载附件失败 (xlrd also failed): {e2}")
-                return []
-        else:
-            print(f"    加载附件失败")
-            return []
+    except Exception as e:
+        print(f"  加载附件失败: {e}")
+        return []
 
     # 各实体sheet的列配置
     sheet_configs = {
@@ -350,81 +340,6 @@ def parse_domestic_from_attachment(attachment_path):
     wb.close()
     return all_items
 
-def _parse_domestic_xls(attachment_path):
-    """xlr fallback for .xls files - 动态解析列位置"""
-    import xlrd
-    today_int = int(TODAY)
-    wb = xlrd.open_workbook(attachment_path)
-    all_items = []
-    for sn in wb.sheet_names():
-        ws = wb.sheet_by_name(sn)
-        if ws.nrows < 2:
-            continue
-        # 从表头动态查找列索引
-        headers = [str(ws.cell_value(0, c)).strip() for c in range(ws.ncols)]
-        def find_col(*keywords):
-            for c, h in enumerate(headers):
-                for kw in keywords:
-                    if kw in h:
-                        return c
-            return -1
-        col_date = find_col('下单日期', '进口日期')
-        col_model = find_col('型号')
-        col_qty = find_col('数量')
-        col_price = find_col('报关单价', '委托报关单价')
-        col_supplier = find_col('供应商')
-        col_code = find_col('物料编码', 'ERPl料号')
-        col_po = find_col('PO')
-        col_so = find_col('SO')
-        if col_model < 0 or col_qty < 0:
-            print(f"    {sn}: 找不到型号/数量列，跳过")
-            continue
-        for r in range(1, ws.nrows):
-            if col_date >= 0:
-                row_date = ws.cell_value(r, col_date)
-                if not row_date:
-                    continue
-                try:
-                    d = int(row_date)
-                    if d != today_int:
-                        continue
-                except:
-                    # Maybe it's an Excel date serial number
-                    try:
-                        from datetime import datetime
-                        dt = xlrd.xldate_as_datetime(row_date, wb.datemode)
-                        if dt.strftime('%Y%m%d') != TODAY:
-                            continue
-                    except:
-                        continue
-            model = str(ws.cell_value(r, col_model)).strip()
-            qty = ws.cell_value(r, col_qty)
-            if not model or not qty:
-                continue
-            # Skip non-BM models (like 接插件, 辅料 etc)
-            if not model.upper().startswith('BM'):
-                continue
-            price = ws.cell_value(r, col_price) if col_price >= 0 else None
-            supplier = str(ws.cell_value(r, col_supplier)).strip() if col_supplier >= 0 else ""
-            code = str(ws.cell_value(r, col_code)).strip() if col_code >= 0 else ""
-            po = ""  # 不从.xls文件读取PO号，让系统自动生成
-            so = str(ws.cell_value(r, col_so)).strip() if col_so >= 0 else ""
-            item = {
-                "model": model.upper(),
-                "qty": int(qty) if qty else 0,
-                "price": float(price) if price else get_model_price(model, None),
-                "supplier": supplier,
-                "material_code": code if code and str(code).upper().startswith('Y') else "",
-                "tax_agent": "",
-                "po": po,
-                "so": so,
-                "date": str(int(d)) if col_date >= 0 else TODAY,
-            }
-            if not item["material_code"] or not item["material_code"].startswith('Y'):
-                item["material_code"] = get_model_code(item["model"]) or ""
-            all_items.append(item)
-            print(f"    {sn}: {item['model']} {item['qty']} PCS @ {item['price']} USD, 供应商={item['supplier']}")
-    return all_items
 
 def parse_qianhai_from_email(body, subject, attachments=None):
     """从邮件正文解析前海保税区结转订单（区间结转），归入海外类"""
