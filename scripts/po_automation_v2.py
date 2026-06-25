@@ -249,10 +249,64 @@ def parse_domestic_from_attachment(attachment_path):
     print(f"  解析国内订单附件: {os.path.basename(attachment_path)}")
     today_int = int(TODAY)
     
-    # .xls files: skip with warning (single-header customs, data added manually)
+    # .xls files: use xlrd, build items with SAME structure as openpyxl path
     if attachment_path.endswith('.xls'):
-        print(f"    .xls格式暂不支持自动解析，请手动补充数据到统计表")
-        return []
+        try:
+            import xlrd
+            xl_wb = xlrd.open_workbook(attachment_path)
+            all_items = []
+            for sn in xl_wb.sheet_names():
+                ws = xl_wb.sheet_by_name(sn)
+                if ws.nrows < 2:
+                    continue
+                # Find column indices from header
+                headers = [str(ws.cell_value(0, c)).strip() for c in range(ws.ncols)]
+                def find_col(*keywords):
+                    for c, h in enumerate(headers):
+                        for kw in keywords:
+                            if kw in h: return c
+                    return -1
+                col_model = find_col('型号')
+                col_qty = find_col('数量')
+                col_price = find_col('报关单价')
+                col_supplier = find_col('供应商')
+                col_date = find_col('下单日期', '进口日期')
+                if col_model < 0 or col_qty < 0:
+                    continue
+                for row in range(1, ws.nrows):
+                    if col_date >= 0:
+                        row_date = ws.cell_value(row, col_date)
+                        try:
+                            if int(row_date) != today_int:
+                                continue
+                        except:
+                            continue
+                    model = str(ws.cell_value(row, col_model)).strip().upper()
+                    qty = ws.cell_value(row, col_qty)
+                    if not model or not qty:
+                        continue
+                    price = ws.cell_value(row, col_price) if col_price >= 0 else None
+                    supplier = str(ws.cell_value(row, col_supplier)).strip() if col_supplier >= 0 else ''
+                    # Build item with EXACT same fields as the openpyxl path below
+                    item = {
+                        "model": model,
+                        "qty": int(qty) if qty else 0,
+                        "price": float(price) if price else get_model_price(model, None),
+                        "supplier": supplier,
+                        "material_code": "",
+                        "tax_agent": "",
+                        "po": "",
+                        "so": "",
+                        "date": str(int(row_date)) if 'row_date' in dir() else TODAY,
+                    }
+                    # Fill material code from mapping
+                    item["material_code"] = get_model_code(item["model"]) or ""
+                    all_items.append(item)
+                    print(f"    {sn}: {item['model']} {item['qty']} PCS @ {item['price']} USD, 供应商={item['supplier']}")
+            return all_items
+        except Exception as e:
+            print(f"   xlrd读取失败: {e}")
+            return []
     
     try:
         wb = load_workbook(attachment_path, data_only=True)
