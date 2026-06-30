@@ -444,7 +444,7 @@ def _parse_domestic_xlrd(attachment_path):
             item = {
                 "model": model,
                 "qty": int(qty) if qty else 0,
-                "price": float(price) if price else get_model_price(model, None),
+                "price": round(float(price), 2) if price else get_model_price(model, None),
                 "supplier": supplier,
                 "material_code": '',
                 "tax_agent": "",
