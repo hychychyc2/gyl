@@ -111,15 +111,18 @@ def load_price_map():
                 prices[str(model).upper().strip()] = float(price)
         MODEL_PRICE_MAP = prices
         
-        # 2. 从 价目表0601 sheet 加载物料编码→价格（精确匹配）
+        # 2. 从 价目表 sheet 加载物料编码→价格（精确匹配）
         code_prices = {}
-        if '价目表0601' in wb.sheetnames:
-            ws_price = wb['价目表0601']
-            for row in ws_price.iter_rows(min_row=2, values_only=True):
-                code = row[2]  # C列=项目编号（物料编码）
-                price = row[9]  # J列=值（价格）
-                if code and price:
-                    code_prices[str(code).strip()] = float(price)
+        # Try '价目表0701','价目表0601' etc
+        for sn in wb.sheetnames:
+            if '价目表' in sn and '名称' not in sn:
+                ws_price = wb[sn]
+                for row in ws_price.iter_rows(min_row=2, values_only=True):
+                    code = row[2]  # C列=项目编号（物料编码）
+                    price = row[9]  # J列=值（价格）
+                    if code and price:
+                        code_prices[str(code).strip()] = float(price)
+                break  # Only use first matching sheet
         CODE_PRICE_MAP = code_prices
         
         wb.close()
