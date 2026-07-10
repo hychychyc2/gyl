@@ -28,7 +28,7 @@ SMTP_PORT = 587
 EMAIL_ACCOUNT = "yuchuan.he@casue.com"
 EMAIL_PASSWORD = "-DxpOD5kkN)(RuPgAK-p"
 SOURCE_EMAIL = "na.yang_w@casue.com"
-REPORT_EMAILS = ["yuchuan.he@casue.com", "haixia.lu@casue.com", "yunrui.chen@casue.com", "na.yang_w@casue.com", "yujia.cheng@casue.com"]
+REPORT_EMAILS = ["yuchuan.he@casue.com", "haixia.lu@casue.com", "yunrui.chen@casue.com", "na.yang_w@casue.com", "yujia.cheng@casue.com", "xinyan.song@casue.com"]
 DOMESTIC_REPORT_EMAIL = "LH-SJXPC@cbscs.com"
 
 # ==================== 数据 (动态从邮件获取) ====================
