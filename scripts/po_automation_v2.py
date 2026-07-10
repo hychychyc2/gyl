@@ -31,9 +31,9 @@ SOURCE_EMAIL = "na.yang_w@casue.com"
 REPORT_EMAILS = ["yuchuan.he@casue.com", "haixia.lu@casue.com", "yunrui.chen@casue.com", "na.yang_w@casue.com", "yujia.cheng@casue.com", "xinyan.song@casue.com"]
 DOMESTIC_REPORT_EMAIL = "LH-SJXPC@cbscs.com"
 
-# 前海保税区邮件
+# 前海保税区邮件收件人
 QIANHAI_TO = ["na.yang_w@casue.com", "qhlhsw01@cbscs.com", "qhlhck@cbscs.com", "fuxia.ping@cbscs.com"]
-QIANHAI_CC = ["yisheng.chen@cbscs.com", "qhlhsw01@cbscs.com", "feng.rongkuan@hkyhg.com", "long.sh@hkyhg.com",
+QIANHAI_CC = ["yisheng.chen@cbscs.com", "feng.rongkuan@hkyhg.com", "long.sh@hkyhg.com",
               "yhg_service1@hkyhg.com", "xu.miao@cbscs.com", "kang.he@casue.com", "chunmiao.fu_w@casue.com",
               "lili_w@casue.com", "jiahuan.liu@casue.com", "ying.zhang02@casue.com", "yuanqin.zhu@casue.com", "log@casue.com"]
 
@@ -41,7 +41,6 @@ QIANHAI_CC = ["yisheng.chen@cbscs.com", "qhlhsw01@cbscs.com", "feng.rongkuan@hky
 DOMESTIC_ITEMS = []
 DOMESTIC_MERGED = []
 OVERSEAS_ITEMS = []
-QIANHAI_ITEMS = []
 TODAY = date.today().strftime("%Y%m%d")
 TODAY_DATE = date.today()
 # Excel serial date: days from 1900-01-01 (Excel bug: treats 1900 as leap year)
@@ -674,7 +673,7 @@ def generate_po_number(prefix, existing_items):
 
 def fetch_and_parse_orders():
     """主函数：从邮件获取并解析订单，设置DOMESTIC_ITEMS和OVERSEAS_ITEMS"""
-    global DOMESTIC_ITEMS, DOMESTIC_MERGED, OVERSEAS_ITEMS, QIANHAI_ITEMS
+    global DOMESTIC_ITEMS, DOMESTIC_MERGED, OVERSEAS_ITEMS
 
     # 加载编码和价格对照表
     load_model_code_map()
@@ -770,7 +769,7 @@ def fetch_and_parse_orders():
                 pass  # 无法解析日期则继续处理
             items = parse_qianhai_from_email(body, subject, attachments)
             if items:
-                QIANHAI_ITEMS.extend(items)
+                overseas_items.extend(items)
             continue
 
         # 海外订单：从正文解析 OR 有墨西哥/出口附件
@@ -792,16 +791,6 @@ def fetch_and_parse_orders():
     
     # 国内不合并（多条记录同一PO），海外按型号+目的地合并
     # domestic_items 保持不变
-    # 国内去重：同一天同一型号同一供应商，只保留一条（翻单附件会重复之前的数据）
-    domestic_dedup = {}
-    for item in domestic_items:
-        key = (item['model'], item.get('supplier',''), item.get('date',''))
-        if key not in domestic_dedup:
-            domestic_dedup[key] = item
-        else:
-            print(f"    国内去重: {item['model']} {item['supplier']} (翻单数据)")
-    domestic_items = list(domestic_dedup.values())
-    
     # 海外：相同料号+目的地+供应商汇总
     overseas_items = merge_same_model(overseas_items, ('model', 'destination', 'supplier'))
 
@@ -831,22 +820,14 @@ def fetch_and_parse_orders():
     DOMESTIC_ITEMS = domestic_items
     OVERSEAS_ITEMS = overseas_items
 
-    # 前海保税区：也生成PO号（用SZK前缀，国内格式）
-    for item in QIANHAI_ITEMS:
-        if not item.get("po"):
-            item["po"] = generate_po_number("SZK", QIANHAI_ITEMS)
-
     print(f"\n  国内订单: {len(DOMESTIC_ITEMS)} 条")
     for item in DOMESTIC_ITEMS:
         print(f"    {item['po']}: {item['model']} {item['qty']} PCS")
     print(f"  海外订单: {len(OVERSEAS_ITEMS)} 条")
     for item in OVERSEAS_ITEMS:
         print(f"    {item['po']}: {item['model']} {item['qty']} PCS")
-    print(f"  前海保税区: {len(QIANHAI_ITEMS)} 条")
-    for item in QIANHAI_ITEMS:
-        print(f"    {item['po']}: {item['model']} {item['qty']} PCS")
 
-    return len(DOMESTIC_ITEMS) > 0 or len(OVERSEAS_ITEMS) > 0 or len(QIANHAI_ITEMS) > 0
+    return len(DOMESTIC_ITEMS) > 0 or len(OVERSEAS_ITEMS) > 0
 
 # ==================== 工具函数 ====================
 def get_ss_map(ss_xml):
@@ -1404,14 +1385,12 @@ def update_domestic_statistics():
             existing_po.add(po_val)
     
     new_items = [item for item in OVERSEAS_ITEMS if item['po'] not in existing_po]
-    qianhai_new = [item for item in QIANHAI_ITEMS if item['po'] not in existing_po]
-    all_new = new_items + qianhai_new
-    skipped = len(OVERSEAS_ITEMS) + len(QIANHAI_ITEMS) - len(all_new)
+    skipped = len(OVERSEAS_ITEMS) - len(new_items)
     if skipped > 0:
-        skipped_pos = [item['po'] for item in OVERSEAS_ITEMS if item not in new_items] + [item['po'] for item in QIANHAI_ITEMS if item not in qianhai_new]
+        skipped_pos = [item['po'] for item in OVERSEAS_ITEMS if item not in new_items]
         print(f"  去重: 跳过 {skipped} 条已存在的记录 (PO号: {skipped_pos})")
     
-    if not all_new:
+    if not new_items:
         print("  无新增数据，不追加行")
         wb.save(output_path)
         print(f"  生成: {output_path} ({os.path.getsize(output_path)} bytes)")
@@ -1605,70 +1584,87 @@ def send_domestic_report():
     
     print(f"  报告发送成功!")
 
-def send_qianhai_email(xlsm_path, summary_path):
-    """发送前海保税区采购订单邮件，国内格式，单独给前海团队"""
-    if not QIANHAI_ITEMS:
+def send_qianhai_report():
+    """发送前海保税区采购订单邮件，HTML表格格式，跟国内一样"""
+    # 从海外订单中筛选前海保税区
+    qianhai_items = [item for item in OVERSEAS_ITEMS if item.get('destination') == '前海保税区']
+    if not qianhai_items:
         return
     
-    print(f"=== 发送前海保税区邮件 ===")
+    print(f"=== 发送前海保税区报告 ===")
     
-    msg = MIMEMultipart()
+    msg = MIMEMultipart('alternative')
     msg['From'] = formataddr(("采购PO自动化", EMAIL_ACCOUNT))
     msg['To'] = ", ".join(QIANHAI_TO)
     msg['Cc'] = ", ".join(QIANHAI_CC)
     msg['Date'] = email_lib.utils.formatdate(localtime=True)
+    msg['Subject'] = Header(f"前海保税区采购订单_{TODAY}", 'utf-8')
     
-    subject = f"前海保税区采购订单_{TODAY}"
-    msg['Subject'] = Header(subject, 'utf-8')
+    html = f"""\
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+<p>您好，</p>
+<p>以下为{TODAY}前海保税区采购订单：</p>
+<table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse; font-size:12px; font-family:Arial, sans-serif;">
+  <tr style="background-color:#4472C4; color:#ffffff; text-align:center;">
+    <th>序号</th>
+    <th>采购主体</th>
+    <th>出货日期</th>
+    <th>销售主体</th>
+    <th>协议</th>
+    <th>供应商</th>
+    <th>型号</th>
+    <th>数量</th>
+    <th>单位</th>
+    <th>物料编码</th>
+    <th>PO号</th>
+  </tr>
+"""
+    for i, item in enumerate(qianhai_items):
+        seq = str(i + 1)
+        entity = "深圳世纪云芯"
+        date = item.get('date', TODAY)
+        dest = "前海保税区"
+        agreement = "区间结转"
+        supplier = item.get('supplier', '')
+        model = item['model']
+        qty = str(item['qty'])
+        unit = "PCS"
+        code = item.get('material_code', '')
+        po = item['po']
+        html += f"""\
+  <tr style="text-align:center;">
+    <td>{seq}</td>
+    <td>{entity}</td>
+    <td>{date}</td>
+    <td>{dest}</td>
+    <td>{agreement}</td>
+    <td>{supplier}</td>
+    <td>{model}</td>
+    <td style="text-align:right;">{qty}</td>
+    <td>{unit}</td>
+    <td>{code}</td>
+    <td>{po}</td>
+  </tr>
+"""
+    html += """\
+</table>
+<br/>
+<p>谢谢！</p>
+</body>
+</html>"""
     
-    body_lines = [
-        "各位好，",
-        "",
-        f"附件为{TODAY}前海保税区采购订单数据，请查收：",
-        "",
-        "**前海保税区订单：**",
-    ]
-    for item in QIANHAI_ITEMS:
-        body_lines.append(f"  {item['po']}: {item['model']} {item['qty']} PCS, 单价 {item['price']} USD, 供应商={item['supplier']}")
+    msg.attach(MIMEText(html, 'html', 'utf-8'))
     
-    body_lines.extend([
-        "",
-        "附件包含：",
-        "1. WebADI采购订单模板(xlsm) - 用于Oracle导入",
-        "2. 采购订单数据(xlsx) - 订单明细",
-        "",
-        "谢谢！",
-    ])
-    
-    body = "\n".join(body_lines)
-    msg.attach(MIMEText(body, 'plain', 'utf-8'))
-    
-    # Attach files
     all_recipients = QIANHAI_TO + QIANHAI_CC
-    for display_name, filepath in [
-        (f"前海保税区采购订单_{TODAY}.xlsm", xlsm_path),
-        (f"前海保税区采购订单数据_{TODAY}.xlsx", summary_path),
-    ]:
-        if not filepath or not os.path.exists(filepath):
-            print(f"  SKIP: {display_name} - file not found")
-            continue
-        with open(filepath, 'rb') as f:
-            part = MIMEBase('application', 'octet-stream')
-            part.set_payload(f.read())
-            encoders.encode_base64(part)
-            encoded_name = quote(display_name)
-            part.add_header('Content-Disposition',
-                           f"attachment; filename*=UTF-8''{encoded_name}")
-            msg.attach(part)
-        print(f"  Attached: {display_name}")
-    
     server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
     server.starttls()
     server.login(EMAIL_ACCOUNT, EMAIL_PASSWORD)
     server.sendmail(EMAIL_ACCOUNT, all_recipients, msg.as_string())
     server.quit()
     
-    print(f"  前海邮件发送成功! (收件人: {len(QIANHAI_TO)}人, 抄送: {len(QIANHAI_CC)}人)")
+    print(f"  前海报告发送成功! (收件人: {len(QIANHAI_TO)}人, 抄送: {len(QIANHAI_CC)}人)")
 
 # ==================== 主流程 ====================
 if __name__ == "__main__":
@@ -1686,17 +1682,10 @@ if __name__ == "__main__":
     intl_path = update_international_template()
     overseas_path = update_domestic_statistics()
     
-    # 前海保税区单独生成（国内格式）
-    qianhai_xlsm = None
-    qianhai_summary = None
-    if QIANHAI_ITEMS:
-        qianhai_xlsm = generate_xlsm(items=QIANHAI_ITEMS, output_name=f"前海保税区采购订单_{TODAY}.xlsm", is_qianhai=True)
-        qianhai_summary = generate_summary_xlsx(items=QIANHAI_ITEMS, output_name=f"前海保税区采购订单数据_{TODAY}.xlsx")
-    
     if xlsm_path and summary_path and intl_path and overseas_path:
         send_email(xlsm_path, summary_path, intl_path, overseas_path)
         send_domestic_report()
-        send_qianhai_email(qianhai_xlsm, qianhai_summary)
+        send_qianhai_report()
         
         # 保存累计文件供第二天使用
         shutil.copy2(intl_path, os.path.join(WORKSPACE, "data/output/国内进口产品统计表.xlsx"))
