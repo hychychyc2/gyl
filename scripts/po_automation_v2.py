@@ -424,11 +424,16 @@ def _parse_domestic_xlrd(attachment_path):
         col_qty = find_col('数量')
         col_price = find_col('报关单价')
         col_supplier = find_col('供应商')
-        # Date column: try '下单日期' first, then '进口日期'
         col_date = find_col('下单日期', '进口日期')
+        col_po = find_col('PO')
         if col_model < 0 or col_qty < 0:
             continue
         for r in range(1, ws.nrows):
+            # Skip rows that already have a PO number (historical data)
+            if col_po >= 0:
+                po_val = str(ws.cell_value(r, col_po)).strip()
+                if po_val and po_val.upper().startswith('SZK'):
+                    continue
             if col_date >= 0:
                 row_date = ws.cell_value(r, col_date)
                 try:
