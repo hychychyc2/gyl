@@ -792,6 +792,16 @@ def fetch_and_parse_orders():
     
     # 国内不合并（多条记录同一PO），海外按型号+目的地合并
     # domestic_items 保持不变
+    # 国内去重：同一天同一型号同一供应商，只保留一条（翻单附件会重复之前的数据）
+    domestic_dedup = {}
+    for item in domestic_items:
+        key = (item['model'], item.get('supplier',''), item.get('date',''))
+        if key not in domestic_dedup:
+            domestic_dedup[key] = item
+        else:
+            print(f"    国内去重: {item['model']} {item['supplier']} (翻单数据)")
+    domestic_items = list(domestic_dedup.values())
+    
     # 海外：相同料号+目的地+供应商汇总
     overseas_items = merge_same_model(overseas_items, ('model', 'destination', 'supplier'))
 
