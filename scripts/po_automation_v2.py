@@ -721,8 +721,12 @@ def fetch_and_parse_orders():
 
         # 有附件且主题含"进口产品统计表" → 国内订单
         is_domestic = attachments and ("进口产品统计表" in subject)
-        # 主题含"进口产品统计表"但无附件 → 跳过（附件已在其他邮件中）
+        # 主题含"进口产品统计表"但无附件 → 跳过
         is_domestic_no_att = (not attachments) and ("进口产品统计表" in subject)
+        # 进口报关资料审核邮件 → 跳过（不产生订单，只是关税付款通知）
+        if "进口报关资料审核" in subject or "进口报关" in subject:
+            print(f"    跳过进口报关资料审核邮件")
+            continue
         # 前海保税区结转 → 单独的解析路径（不识别为海外或国内）
         is_qianhai = "区间结转" in subject or "前海" in subject
         # 海外关键词：出口/出货通知/海外/DPT/清关资料/墨西哥
