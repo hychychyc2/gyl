@@ -31,10 +31,17 @@ SOURCE_EMAIL = "na.yang_w@casue.com"
 REPORT_EMAILS = ["yuchuan.he@casue.com", "haixia.lu@casue.com", "yunrui.chen@casue.com", "na.yang_w@casue.com", "yujia.cheng@casue.com", "xinyan.song@casue.com"]
 DOMESTIC_REPORT_EMAIL = "LH-SJXPC@cbscs.com"
 
+# 前海保税区邮件
+QIANHAI_TO = ["na.yang_w@casue.com", "qhlhsw01@cbscs.com", "qhlhck@cbscs.com", "fuxia.ping@cbscs.com"]
+QIANHAI_CC = ["yisheng.chen@cbscs.com", "qhlhsw01@cbscs.com", "feng.rongkuan@hkyhg.com", "long.sh@hkyhg.com",
+              "yhg_service1@hkyhg.com", "xu.miao@cbscs.com", "kang.he@casue.com", "chunmiao.fu_w@casue.com",
+              "lili_w@casue.com", "jiahuan.liu@casue.com", "ying.zhang02@casue.com", "yuanqin.zhu@casue.com", "log@casue.com"]
+
 # ==================== 数据 (动态从邮件获取) ====================
 DOMESTIC_ITEMS = []
 DOMESTIC_MERGED = []
 OVERSEAS_ITEMS = []
+QIANHAI_ITEMS = []
 TODAY = date.today().strftime("%Y%m%d")
 TODAY_DATE = date.today()
 # Excel serial date: days from 1900-01-01 (Excel bug: treats 1900 as leap year)
@@ -667,7 +674,7 @@ def generate_po_number(prefix, existing_items):
 
 def fetch_and_parse_orders():
     """主函数：从邮件获取并解析订单，设置DOMESTIC_ITEMS和OVERSEAS_ITEMS"""
-    global DOMESTIC_ITEMS, DOMESTIC_MERGED, OVERSEAS_ITEMS
+    global DOMESTIC_ITEMS, DOMESTIC_MERGED, OVERSEAS_ITEMS, QIANHAI_ITEMS
 
     # 加载编码和价格对照表
     load_model_code_map()
@@ -759,7 +766,7 @@ def fetch_and_parse_orders():
                 pass  # 无法解析日期则继续处理
             items = parse_qianhai_from_email(body, subject, attachments)
             if items:
-                overseas_items.extend(items)
+                QIANHAI_ITEMS.extend(items)
             continue
 
         # 海外订单：从正文解析 OR 有墨西哥/出口附件
@@ -810,14 +817,22 @@ def fetch_and_parse_orders():
     DOMESTIC_ITEMS = domestic_items
     OVERSEAS_ITEMS = overseas_items
 
+    # 前海保税区：也生成PO号（用SZK前缀，国内格式）
+    for item in QIANHAI_ITEMS:
+        if not item.get("po"):
+            item["po"] = generate_po_number("SZK", QIANHAI_ITEMS)
+
     print(f"\n  国内订单: {len(DOMESTIC_ITEMS)} 条")
     for item in DOMESTIC_ITEMS:
         print(f"    {item['po']}: {item['model']} {item['qty']} PCS")
     print(f"  海外订单: {len(OVERSEAS_ITEMS)} 条")
     for item in OVERSEAS_ITEMS:
         print(f"    {item['po']}: {item['model']} {item['qty']} PCS")
+    print(f"  前海保税区: {len(QIANHAI_ITEMS)} 条")
+    for item in QIANHAI_ITEMS:
+        print(f"    {item['po']}: {item['model']} {item['qty']} PCS")
 
-    return len(DOMESTIC_ITEMS) > 0 or len(OVERSEAS_ITEMS) > 0
+    return len(DOMESTIC_ITEMS) > 0 or len(OVERSEAS_ITEMS) > 0 or len(QIANHAI_ITEMS) > 0
 
 # ==================== 工具函数 ====================
 def get_ss_map(ss_xml):
@@ -872,10 +887,20 @@ def add_multiple_ss(ss_xml, strings_to_add):
     return result_map, ss_xml
 
 # ==================== 1. 生成WebADI xlsm ====================
-def generate_xlsm():
-    print("=== 生成WebADI xlsm ===")
+def generate_xlsm(items=None, output_name=None, is_qianhai=False):
+    """生成WebADI xlsm。
+    items: 订单列表，默认=DOMESTIC_MERGED + OVERSEAS_ITEMS
+    output_name: 输出文件名，默认=采购订单_{TODAY}.xlsm
+    is_qianhai: 前海保税区模式，全部用SZK实体
+    """
+    if items is None:
+        items = list(DOMESTIC_MERGED) + list(OVERSEAS_ITEMS)
+    if output_name is None:
+        output_name = f"采购订单_{TODAY}.xlsm"
+    
+    print(f"=== 生成WebADI xlsm: {output_name} ===")
     template_path = os.path.join(WORKSPACE, "data/templates/webadi_template.xlsm")
-    output_path = os.path.join(WORKSPACE, f"data/output/采购订单_{TODAY}.xlsm")
+    output_path = os.path.join(WORKSPACE, f"data/output/{output_name}")
     
     z = zipfile.ZipFile(template_path, 'r')
     sheet2_raw = z.read('xl/worksheets/sheet2.xml').decode('utf-8')
@@ -899,34 +924,30 @@ def generate_xlsm():
     
     # Strings to add to sharedStrings
     new_strings = []
-    for item in DOMESTIC_ITEMS:
+    for item in items:
         new_strings.extend([item['po'], item['material_code'], item['model']])
-    for item in OVERSEAS_ITEMS:
-        new_strings.extend([item['po'], item['material_code'], item['model']])
-    # Add model description strings
-    for item in DOMESTIC_ITEMS:
+    for item in items:
         new_strings.append(f"{item['model']}芯片")
-    for item in OVERSEAS_ITEMS:
-        new_strings.append(f"{item['model']}芯片")
-    # DPT海外专用字符串
-    new_strings.extend([
-        'DPT',                        # 业务实体(海外)
-        'CHANHUA PTE. LTD.',          # 供应商(海外)
-        '费用',                       # 供应商地点(海外)
-        '1155.BITMAIN DEVELOPMENT PTE. LTD.',  # 收货方(海外)
-    ])
-    # 海外目的子库存 - 根据收货地址
-    for item in OVERSEAS_ITEMS:
-        dest_subinv_map = {
-            '泰国群光': 'DPTHQGCP',
-            '泰国ONETEC': 'DPTONETYCL',
-            'PIE': 'DPTPIECL',
-            '前海保税区': 'DPTQHBSC',
-            '墨西哥欧陆通': 'DPTMOLTYCL',
-        }
-        dest_subinv = dest_subinv_map.get(item.get('destination', ''), 'DPTHQGCP')
-        new_strings.append(dest_subinv)
-        item['dest_subinv'] = dest_subinv
+    # DPT海外专用字符串（前海模式不需要）
+    if not is_qianhai:
+        new_strings.extend([
+            'DPT',
+            'CHANHUA PTE. LTD.',
+            '费用',
+            '1155.BITMAIN DEVELOPMENT PTE. LTD.',
+        ])
+        # 海外目的子库存
+        for item in OVERSEAS_ITEMS:
+            dest_subinv_map = {
+                '泰国群光': 'DPTHQGCP',
+                '泰国ONETEC': 'DPTONETYCL',
+                'PIE': 'DPTPIECL',
+                '前海保税区': 'DPTQHBSC',
+                '墨西哥欧陆通': 'DPTMOLTYCL',
+            }
+            dest_subinv = dest_subinv_map.get(item.get('destination', ''), 'DPTHQGCP')
+            new_strings.append(dest_subinv)
+            item['dest_subinv'] = dest_subinv
     
     new_strings = list(set(new_strings))  # deduplicate
     
@@ -941,8 +962,8 @@ def generate_xlsm():
     def make_xlsm_row(row_num, item, is_domestic=True):
         row = f'<row r="{row_num}" spans="2:39" ht="14.25" outlineLevel="1">'
         
-        if is_domestic:
-            # 国内SZK订单
+        if is_domestic or is_qianhai:
+            # 国内SZK订单（含前海保税区）
             entity_idx = ss_map["SZK"]
             supplier_idx = ss_map["BITMAIN"]
             supplier_loc_idx = ss_map["SG"]
@@ -1034,10 +1055,9 @@ def generate_xlsm():
         row += '</row>'
         return row
     
-    # Build ALL rows from row 10 to template_max_row
-    # - Rows 1-9: kept from template (header area)
-    # - Rows 10+: regenerated — data rows + clean empty padding (no shifting of stale template rows)
-    all_items = list(DOMESTIC_MERGED) + list(OVERSEAS_ITEMS)
+    # Build ALL rows
+    all_items = items
+    domestic_count = len(DOMESTIC_MERGED) if not is_qianhai else len(items)
     
     # Figure out how many rows the template has
     template_max = 1005
@@ -1050,7 +1070,7 @@ def generate_xlsm():
         rn = 10 + i
         if i < len(all_items):
             item = all_items[i]
-            is_dom = i < len(DOMESTIC_MERGED)
+            is_dom = i < domestic_count
             new_rows.append(make_xlsm_row(rn, item, is_domestic=is_dom))
         else:
             # Clean empty padding row — styles only, NO shared string content
@@ -1114,14 +1134,24 @@ def generate_xlsm():
     return output_path
 
 # ==================== 2. 生成采购订单数据xlsx ====================
-def generate_summary_xlsx():
+def generate_summary_xlsx(items=None, output_name=None):
+    """生成采购订单数据xlsx
+    items: 订单列表，默认=DOMESTIC_MERGED + OVERSEAS_ITEMS
+    output_name: 输出文件名
+    """
+    if items is None:
+        items = list(DOMESTIC_MERGED) + list(OVERSEAS_ITEMS)
+    
     print("=== 生成采购订单数据xlsx ===")
     import openpyxl
     from openpyxl.styles import Font, Alignment, Border, Side
     
-    # 用第一个国内PO号命名，没有则用TODAY
-    first_po = DOMESTIC_ITEMS[0]['po'] if DOMESTIC_ITEMS else f"PO_{TODAY}"
-    output_path = os.path.join(WORKSPACE, f"data/output/{first_po}.xlsx")
+    # 用第一个PO号命名，没有则用TODAY
+    if output_name:
+        output_path = os.path.join(WORKSPACE, f"data/output/{output_name}")
+    else:
+        first_po = DOMESTIC_ITEMS[0]['po'] if DOMESTIC_ITEMS else f"PO_{TODAY}"
+        output_path = os.path.join(WORKSPACE, f"data/output/{first_po}.xlsx")
     
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -1136,30 +1166,32 @@ def generate_summary_xlsx():
     
     ws.append(headers)
     
-    all_items = []
-    domestic_data = [
-        ('Y', 'SZK', '标准采购订单', item['po'], 'USD', '何宇川,', 'BITMAIN DEVELOPMENT PTE.  LTD.',
-         'SG', 'XAP', '1004.Bitmain Shenzhen', 'SZKXYCL', '1004.Bitmain Shenzhen',
-         '付款方式一', '生产用料销售', '', 'Y', '', '手工录入', '', i+1, 'BM系列',
-         item['material_code'], f"{item['model']}芯片", '个', item['qty'],
-         TODAY_DATE, TODAY_DATE, TODAY_DATE, item['price'], item['price'], '0', 'ANTMINER')
-        for i, item in enumerate(DOMESTIC_MERGED)
-    ]
+    # 判断是否前海保税区（全部用SZK实体）
+    is_qianhai = output_name and '前海' in output_name
     
-    dest_subinv_map = {
-        '泰国群光': 'DPTHQGCP', '泰国ONETEC': 'DPTONETYCL', 'PIE': 'DPTPIECL',
-        '前海保税区': 'DPTQHBSC', '墨西哥欧陆通': 'DPTMOLTYCL',
-    }
-    overseas_data = [
-        ('Y', 'DPT', '标准采购订单', item['po'], 'USD', '何宇川,', 'CHANHUA PTE. LTD.',
-         '费用', 'XAP', '1155.BITMAIN DEVELOPMENT PTE. LTD.', dest_subinv_map.get(item.get('destination',''), 'DPTHQGCP'), '1155.BITMAIN DEVELOPMENT PTE. LTD.',
-         '付款方式一', '生产用料销售', '', 'Y', '', '手工录入', '', 1, 'BM系列',
-         item['material_code'], f"{item['model']}芯片", '个', item['qty'],
-         TODAY_DATE, TODAY_DATE, TODAY_DATE, item['price'], item['price'], '0', 'ANTMINER')
-        for item in OVERSEAS_ITEMS
-    ]
+    all_rows = []
+    for i, item in enumerate(items):
+        if is_qianhai or item in DOMESTIC_MERGED:
+            # 国内SZK格式（含前海保税区）
+            row_data = ('Y', 'SZK', '标准采购订单', item['po'], 'USD', '何宇川,', 'BITMAIN DEVELOPMENT PTE.  LTD.',
+                       'SG', 'XAP', '1004.Bitmain Shenzhen', 'SZKXYCL', '1004.Bitmain Shenzhen',
+                       '付款方式一', '生产用料销售', '', 'Y', '', '手工录入', '', i+1, 'BM系列',
+                       item['material_code'], f"{item['model']}芯片", '个', item['qty'],
+                       TODAY_DATE, TODAY_DATE, TODAY_DATE, item['price'], item['price'], '0', 'ANTMINER')
+        else:
+            # 海外DPT格式
+            dest_subinv_map = {
+                '泰国群光': 'DPTHQGCP', '泰国ONETEC': 'DPTONETYCL', 'PIE': 'DPTPIECL',
+                '前海保税区': 'DPTQHBSC', '墨西哥欧陆通': 'DPTMOLTYCL',
+            }
+            dest_subinv = dest_subinv_map.get(item.get('destination',''), 'DPTHQGCP')
+            row_data = ('Y', 'DPT', '标准采购订单', item['po'], 'USD', '何宇川,', 'CHANHUA PTE. LTD.',
+                       '费用', 'XAP', '1155.BITMAIN DEVELOPMENT PTE. LTD.', dest_subinv, '1155.BITMAIN DEVELOPMENT PTE. LTD.',
+                       '付款方式一', '生产用料销售', '', 'Y', '', '手工录入', '', 1, 'BM系列',
+                       item['material_code'], f"{item['model']}芯片", '个', item['qty'],
+                       TODAY_DATE, TODAY_DATE, TODAY_DATE, item['price'], item['price'], '0', 'ANTMINER')
+        all_rows.append(row_data)
     
-    all_rows = domestic_data + overseas_data
     for row_data in all_rows:
         ws.append(row_data)
     
@@ -1358,11 +1390,14 @@ def update_domestic_statistics():
             existing_po.add(po_val)
     
     new_items = [item for item in OVERSEAS_ITEMS if item['po'] not in existing_po]
-    skipped = len(OVERSEAS_ITEMS) - len(new_items)
+    qianhai_new = [item for item in QIANHAI_ITEMS if item['po'] not in existing_po]
+    all_new = new_items + qianhai_new
+    skipped = len(OVERSEAS_ITEMS) + len(QIANHAI_ITEMS) - len(all_new)
     if skipped > 0:
-        print(f"  去重: 跳过 {skipped} 条已存在的记录 (PO号: {[item['po'] for item in OVERSEAS_ITEMS if item not in new_items]})")
+        skipped_pos = [item['po'] for item in OVERSEAS_ITEMS if item not in new_items] + [item['po'] for item in QIANHAI_ITEMS if item not in qianhai_new]
+        print(f"  去重: 跳过 {skipped} 条已存在的记录 (PO号: {skipped_pos})")
     
-    if not new_items:
+    if not all_new:
         print("  无新增数据，不追加行")
         wb.save(output_path)
         print(f"  生成: {output_path} ({os.path.getsize(output_path)} bytes)")
@@ -1371,7 +1406,7 @@ def update_domestic_statistics():
     # Get last sequence number
     last_seq = ws.cell(row=last_row, column=1).value or (last_row - 1)
     
-    for i, item in enumerate(new_items):
+    for i, item in enumerate(all_new):
         row_num = last_row + 1 + i
         seq = int(last_seq) + 1 + i if isinstance(last_seq, (int, float)) else row_num - 1
         
@@ -1556,6 +1591,71 @@ def send_domestic_report():
     
     print(f"  报告发送成功!")
 
+def send_qianhai_email(xlsm_path, summary_path):
+    """发送前海保税区采购订单邮件，国内格式，单独给前海团队"""
+    if not QIANHAI_ITEMS:
+        return
+    
+    print(f"=== 发送前海保税区邮件 ===")
+    
+    msg = MIMEMultipart()
+    msg['From'] = formataddr(("采购PO自动化", EMAIL_ACCOUNT))
+    msg['To'] = ", ".join(QIANHAI_TO)
+    msg['Cc'] = ", ".join(QIANHAI_CC)
+    msg['Date'] = email_lib.utils.formatdate(localtime=True)
+    
+    subject = f"前海保税区采购订单_{TODAY}"
+    msg['Subject'] = Header(subject, 'utf-8')
+    
+    body_lines = [
+        "各位好，",
+        "",
+        f"附件为{TODAY}前海保税区采购订单数据，请查收：",
+        "",
+        "**前海保税区订单：**",
+    ]
+    for item in QIANHAI_ITEMS:
+        body_lines.append(f"  {item['po']}: {item['model']} {item['qty']} PCS, 单价 {item['price']} USD, 供应商={item['supplier']}")
+    
+    body_lines.extend([
+        "",
+        "附件包含：",
+        "1. WebADI采购订单模板(xlsm) - 用于Oracle导入",
+        "2. 采购订单数据(xlsx) - 订单明细",
+        "",
+        "谢谢！",
+    ])
+    
+    body = "\n".join(body_lines)
+    msg.attach(MIMEText(body, 'plain', 'utf-8'))
+    
+    # Attach files
+    all_recipients = QIANHAI_TO + QIANHAI_CC
+    for display_name, filepath in [
+        (f"前海保税区采购订单_{TODAY}.xlsm", xlsm_path),
+        (f"前海保税区采购订单数据_{TODAY}.xlsx", summary_path),
+    ]:
+        if not filepath or not os.path.exists(filepath):
+            print(f"  SKIP: {display_name} - file not found")
+            continue
+        with open(filepath, 'rb') as f:
+            part = MIMEBase('application', 'octet-stream')
+            part.set_payload(f.read())
+            encoders.encode_base64(part)
+            encoded_name = quote(display_name)
+            part.add_header('Content-Disposition',
+                           f"attachment; filename*=UTF-8''{encoded_name}")
+            msg.attach(part)
+        print(f"  Attached: {display_name}")
+    
+    server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+    server.starttls()
+    server.login(EMAIL_ACCOUNT, EMAIL_PASSWORD)
+    server.sendmail(EMAIL_ACCOUNT, all_recipients, msg.as_string())
+    server.quit()
+    
+    print(f"  前海邮件发送成功! (收件人: {len(QIANHAI_TO)}人, 抄送: {len(QIANHAI_CC)}人)")
+
 # ==================== 主流程 ====================
 if __name__ == "__main__":
     print(f"采购订单自动化 - {TODAY}")
@@ -1572,9 +1672,17 @@ if __name__ == "__main__":
     intl_path = update_international_template()
     overseas_path = update_domestic_statistics()
     
+    # 前海保税区单独生成（国内格式）
+    qianhai_xlsm = None
+    qianhai_summary = None
+    if QIANHAI_ITEMS:
+        qianhai_xlsm = generate_xlsm(items=QIANHAI_ITEMS, output_name=f"前海保税区采购订单_{TODAY}.xlsm", is_qianhai=True)
+        qianhai_summary = generate_summary_xlsx(items=QIANHAI_ITEMS, output_name=f"前海保税区采购订单数据_{TODAY}.xlsx")
+    
     if xlsm_path and summary_path and intl_path and overseas_path:
         send_email(xlsm_path, summary_path, intl_path, overseas_path)
         send_domestic_report()
+        send_qianhai_email(qianhai_xlsm, qianhai_summary)
         
         # 保存累计文件供第二天使用
         shutil.copy2(intl_path, os.path.join(WORKSPACE, "data/output/国内进口产品统计表.xlsx"))
