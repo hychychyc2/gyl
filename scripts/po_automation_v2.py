@@ -723,7 +723,7 @@ def fetch_and_parse_orders():
         # 主题含"进口产品统计表"但无附件 → 跳过
         is_domestic_no_att = (not attachments) and ("进口产品统计表" in subject)
         # 进口报关资料审核邮件 → 跳过（不产生订单，只是关税付款通知）
-        if "进口报关资料审核" in subject or "进口报关" in subject:
+        if "进口报关资料审核" in subject:
             print(f"    跳过进口报关资料审核邮件")
             continue
         # 前海保税区结转 → 单独的解析路径（不识别为海外或国内）
@@ -1399,7 +1399,7 @@ def update_domestic_statistics():
     # Get last sequence number
     last_seq = ws.cell(row=last_row, column=1).value or (last_row - 1)
     
-    for i, item in enumerate(all_new):
+    for i, item in enumerate(new_items):
         row_num = last_row + 1 + i
         seq = int(last_seq) + 1 + i if isinstance(last_seq, (int, float)) else row_num - 1
         
