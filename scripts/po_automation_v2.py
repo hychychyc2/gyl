@@ -728,7 +728,10 @@ def fetch_and_parse_orders():
             continue
         # 前海保税区结转 → 单独的解析路径（不识别为海外或国内）
         is_qianhai = "区间结转" in subject or "前海" in subject
-        # 海外关键词：出口/出货通知/海外/DPT/清关资料/墨西哥
+        # 送货预约邮件 → 跳过（只是物流通知，不是订单）
+        if "送货预约" in subject:
+            print(f"    跳过送货预约邮件")
+            continue
         overseas_keywords = ["出口", "出货通知", "海外", "DPT", "清关资料", "墨西哥"]
         is_overseas = any(kw in subject for kw in overseas_keywords) and not is_domestic and not is_qianhai
         # 有出口相关附件但没命中海外关键字 → 也尝试解析
