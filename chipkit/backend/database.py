@@ -1,23 +1,47 @@
 """
 芯片齐套管理系统 - 数据库层
-SQLite WAL模式 + 应用层乐观锁
+SQLite WAL模式 + 应用层乐观锁 + 密码加密
 """
 import sqlite3
 import threading
 import time
 import json
 import os
+import base64
+import hashlib
 from datetime import datetime
 from contextlib import contextmanager
 from typing import Optional, List, Dict, Any, Tuple
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "chipkit.db")
 
-# 写入锁：保证同一时刻只有一个写入
 _write_lock = threading.Lock()
-# 连接池：每个线程一个连接
 _local = threading.local()
 
+# ============ 密码加密 ============
+SECRET_KEY = b'chipkit_salt_2026'
+
+def encrypt_password(plain: str) -> str:
+    """简单加密存储邮箱密码"""
+    if not plain:
+        return ''
+    # 使用固定密钥 XOR + base64
+    key = SECRET_KEY * (len(plain) // len(SECRET_KEY) + 1)
+    encrypted = bytes(a ^ b for a, b in zip(plain.encode(), key[:len(plain)]))
+    return base64.b64encode(encrypted).decode()
+
+def decrypt_password(encrypted: str) -> str:
+    """解密邮箱密码"""
+    if not encrypted:
+        return ''
+    try:
+        data = base64.b64decode(encrypted)
+        key = SECRET_KEY * (len(data) // len(SECRET_KEY) + 1)
+        return bytes(a ^ b for a, b in zip(data, key[:len(data)])).decode()
+    except:
+        return encrypted
+
+# ============ 连接管理 ============
 def get_db_path():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     return DB_PATH
@@ -36,23 +60,22 @@ def get_conn() -> sqlite3.Connection:
 
 @contextmanager
 def write_lock():
-    """获取写锁，超时5秒"""
     acquired = _write_lock.acquire(timeout=5)
     if not acquired:
-        raise RuntimeError("写入锁获取超时，系统繁忙")
+        raise RuntimeError("写入锁获取超时")
     try:
         yield
     finally:
         _write_lock.release()
 
+# ============ 表结构 ============
 def init_db():
-    """初始化所有表"""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = get_conn()
     cursor = conn.cursor()
 
     tables = [
-        # 出货明细
+        # ===== 出货明细 =====
         """CREATE TABLE IF NOT EXISTS shipping_detail (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             entity TEXT DEFAULT '',
@@ -80,19 +103,17 @@ def init_db():
             device_prog_bin TEXT DEFAULT '',
             erp_batch_ref TEXT DEFAULT '',
             shipped_qty INTEGER DEFAULT 0,
-            source TEXT DEFAULT 'manual',
+            source TEXT DEFAULT '',
             import_batch TEXT DEFAULT '',
             version INTEGER DEFAULT 1,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime'))
         )""",
-
-        # 唯一索引
-        """CREATE UNIQUE INDEX IF NOT EXISTS idx_shipping_unique 
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_ship_unique 
         ON shipping_detail(entity, ship_date, device_pn, wafer_lot_id, marking, 
                           good_qty, bin, invoice_no, test_program, osat, ship_to, test_wo)""",
 
-        # 库存统一表
+        # ===== 库存统一表（所有库存类型共用） =====
         """CREATE TABLE IF NOT EXISTS inventory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             device TEXT DEFAULT '',
@@ -100,13 +121,16 @@ def init_db():
             qty INTEGER DEFAULT 0,
             bin TEXT DEFAULT '',
             test_program TEXT DEFAULT '',
-            location_code TEXT DEFAULT '',
             warehouse_type TEXT DEFAULT '',
             warehouse_name TEXT DEFAULT '',
+            material_code TEXT DEFAULT '',
+            product_desc TEXT DEFAULT '',
             batch TEXT DEFAULT '',
             date_code TEXT DEFAULT '',
-            material_code TEXT DEFAULT '',
             status TEXT DEFAULT '正常',
+            location_area TEXT DEFAULT '',
+            sub_inventory TEXT DEFAULT '',
+            org TEXT DEFAULT '',
             remark TEXT DEFAULT '',
             device_prog_bin TEXT DEFAULT '',
             import_batch TEXT DEFAULT '',
@@ -114,10 +138,14 @@ def init_db():
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime'))
         )""",
+        """CREATE INDEX IF NOT EXISTS idx_inv_device ON inventory(device)""",
+        """CREATE INDEX IF NOT EXISTS idx_inv_type ON inventory(warehouse_type)""",
+        """CREATE INDEX IF NOT EXISTS idx_inv_dpb ON inventory(device_prog_bin)""",
 
-        # 机型对照表
+        # ===== 机型对照表 =====
         """CREATE TABLE IF NOT EXISTS model_mapping (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_code TEXT DEFAULT '',
             device TEXT DEFAULT '',
             test_program TEXT DEFAULT '',
             bin TEXT DEFAULT '',
@@ -130,12 +158,10 @@ def init_db():
             model19 TEXT DEFAULT '', model20 TEXT DEFAULT '', model21 TEXT DEFAULT '',
             model22 TEXT DEFAULT '',
             device_prog_bin TEXT DEFAULT '',
-            exclusive_bin INTEGER DEFAULT 0,
             product TEXT DEFAULT '',
             osat_model TEXT DEFAULT '',
-            chip_total INTEGER DEFAULT 0,
-            unit_count INTEGER DEFAULT 0,
             project TEXT DEFAULT '',
+            exclusive_bin INTEGER DEFAULT 0,
             version INTEGER DEFAULT 1,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime'))
@@ -143,7 +169,7 @@ def init_db():
         """CREATE UNIQUE INDEX IF NOT EXISTS idx_model_unique 
         ON model_mapping(device, test_program, bin)""",
 
-        # 用量对照表
+        # ===== 用量对照表 =====
         """CREATE TABLE IF NOT EXISTS usage_mapping (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             device TEXT DEFAULT '',
@@ -155,7 +181,7 @@ def init_db():
             updated_at TEXT DEFAULT (datetime('now','localtime'))
         )""",
 
-        # 混BIN分配表
+        # ===== 混BIN分配表 =====
         """CREATE TABLE IF NOT EXISTS mix_bin (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             device_prog_bin TEXT DEFAULT '',
@@ -176,7 +202,7 @@ def init_db():
             updated_at TEXT DEFAULT (datetime('now','localtime'))
         )""",
 
-        # 外协代码映射表
+        # ===== 外协代码映射表 =====
         """CREATE TABLE IF NOT EXISTS subcontractor_mapping (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             type TEXT DEFAULT '',
@@ -187,12 +213,11 @@ def init_db():
             address TEXT DEFAULT '',
             contact TEXT DEFAULT '',
             version INTEGER DEFAULT 1,
-            created_at TEXT DEFAULT (datetime('now','localtime'))
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            updated_at TEXT DEFAULT (datetime('now','localtime'))
         )""",
-        """CREATE UNIQUE INDEX IF NOT EXISTS idx_sub_unique 
-        ON subcontractor_mapping(internal_code, external_name)""",
 
-        # 物流时间表
+        # ===== 物流时间表 =====
         """CREATE TABLE IF NOT EXISTS logistics_time (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             destination TEXT DEFAULT '',
@@ -203,7 +228,7 @@ def init_db():
             updated_at TEXT DEFAULT (datetime('now','localtime'))
         )""",
 
-        # 料号Device对照表
+        # ===== 料号Device对照表 =====
         """CREATE TABLE IF NOT EXISTS material_device (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             erp_code TEXT DEFAULT '',
@@ -212,10 +237,11 @@ def init_db():
             description TEXT DEFAULT '',
             package_desc TEXT DEFAULT '',
             version INTEGER DEFAULT 1,
-            created_at TEXT DEFAULT (datetime('now','localtime'))
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            updated_at TEXT DEFAULT (datetime('now','localtime'))
         )""",
 
-        # 齐套达成表
+        # ===== 齐套达成表 =====
         """CREATE TABLE IF NOT EXISTS kit_completion (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             region TEXT DEFAULT '',
@@ -238,7 +264,7 @@ def init_db():
             updated_at TEXT DEFAULT (datetime('now','localtime'))
         )""",
 
-        # 出货计划表
+        # ===== 出货计划表 =====
         """CREATE TABLE IF NOT EXISTS shipping_plan (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             plan_date TEXT DEFAULT '',
@@ -258,7 +284,7 @@ def init_db():
             updated_at TEXT DEFAULT (datetime('now','localtime'))
         )""",
 
-        # ERP库存表
+        # ===== ERP库存表 =====
         """CREATE TABLE IF NOT EXISTS erp_inventory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             org TEXT DEFAULT '',
@@ -274,18 +300,19 @@ def init_db():
             device_prog_bin TEXT DEFAULT '',
             import_batch TEXT DEFAULT '',
             version INTEGER DEFAULT 1,
-            created_at TEXT DEFAULT (datetime('now','localtime'))
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            updated_at TEXT DEFAULT (datetime('now','localtime'))
         )""",
 
-        # 邮件配置表
+        # ===== 邮件配置表 =====
         """CREATE TABLE IF NOT EXISTS email_config (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             purpose TEXT DEFAULT '',
             description TEXT DEFAULT '',
             email_address TEXT DEFAULT '',
-            imap_server TEXT DEFAULT '',
+            imap_server TEXT DEFAULT 'imap.appia.vip',
             account TEXT DEFAULT '',
-            password_blob TEXT DEFAULT '',
+            password_encrypted TEXT DEFAULT '',
             root_folder TEXT DEFAULT 'INBOX',
             match_key TEXT DEFAULT '',
             suffix TEXT DEFAULT '.xlsx',
@@ -297,7 +324,7 @@ def init_db():
             updated_at TEXT DEFAULT (datetime('now','localtime'))
         )""",
 
-        # 用户表
+        # ===== 用户表 =====
         """CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
@@ -308,7 +335,7 @@ def init_db():
             created_at TEXT DEFAULT (datetime('now','localtime'))
         )""",
 
-        # 操作日志表
+        # ===== 操作日志 =====
         """CREATE TABLE IF NOT EXISTS operation_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             action TEXT DEFAULT '',
@@ -319,7 +346,7 @@ def init_db():
             created_at TEXT DEFAULT (datetime('now','localtime'))
         )""",
 
-        # 导入批次跟踪
+        # ===== 导入批次 =====
         """CREATE TABLE IF NOT EXISTS import_batch (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             batch_id TEXT UNIQUE DEFAULT '',
@@ -336,26 +363,13 @@ def init_db():
         try:
             cursor.execute(sql)
         except Exception as e:
-            print(f"SQL error: {e}\n{sql[:200]}")
+            print(f"SQL error: {e}")
 
     conn.commit()
-
-    # 创建默认管理员
-    try:
-        cursor.execute("SELECT id FROM users WHERE email='yuchuan.he@casue.com'")
-        if not cursor.fetchone():
-            cursor.execute(
-                "INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)",
-                ("yuchuan.he@casue.com", "何宇川", "admin", "chipkit_admin_2026")
-            )
-            conn.commit()
-    except:
-        pass
-
     print("✅ 数据库初始化完成")
 
+# ============ 通用 CRUD ============
 def insert(table: str, data: Dict[str, Any]) -> int:
-    """插入一条记录，返回id"""
     with write_lock():
         conn = get_conn()
         columns = list(data.keys())
@@ -367,7 +381,6 @@ def insert(table: str, data: Dict[str, Any]) -> int:
         return cursor.lastrowid
 
 def insert_many(table: str, rows: List[Dict[str, Any]]) -> int:
-    """批量插入，返回插入行数"""
     if not rows:
         return 0
     with write_lock():
@@ -382,7 +395,6 @@ def insert_many(table: str, rows: List[Dict[str, Any]]) -> int:
         return cursor.rowcount
 
 def update(table: str, record_id: int, data: Dict[str, Any]) -> bool:
-    """乐观锁更新"""
     with write_lock():
         conn = get_conn()
         version = data.pop('version', None)
@@ -390,30 +402,26 @@ def update(table: str, record_id: int, data: Dict[str, Any]) -> bool:
             current = conn.execute(f"SELECT version FROM {table} WHERE id=?", (record_id,)).fetchone()
             if not current or current[0] != version:
                 return False
-            new_version = version + 1
-            data['version'] = new_version
+            data['version'] = version + 1
         data['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         set_clause = ', '.join(f"{k}=?" for k in data)
         where = "id=? AND version=?" if version is not None else "id=?"
-        params = list(data.values())
-        params.append(record_id)
+        params = list(data.values()) + [record_id]
         if version is not None:
             params.append(version)
         sql = f"UPDATE {table} SET {set_clause} WHERE {where}"
-        cursor = conn.execute(sql, params)
+        conn.execute(sql, params)
         conn.commit()
-        return cursor.rowcount > 0
+        return True
 
 def delete(table: str, record_id: int) -> bool:
-    """删除记录"""
     with write_lock():
         conn = get_conn()
-        cursor = conn.execute(f"DELETE FROM {table} WHERE id=?", (record_id,))
+        conn.execute(f"DELETE FROM {table} WHERE id=?", (record_id,))
         conn.commit()
-        return cursor.rowcount > 0
+        return True
 
 def delete_where(table: str, **conditions) -> int:
-    """条件删除"""
     with write_lock():
         conn = get_conn()
         if not conditions:
@@ -425,10 +433,9 @@ def delete_where(table: str, **conditions) -> int:
         conn.commit()
         return cursor.rowcount
 
-def query(table: str, columns: str = "*", where: str = "", 
-          params: tuple = (), order_by: str = "", limit: int = 0, 
+def query(table: str, columns: str = "*", where: str = "",
+          params: tuple = (), order_by: str = "", limit: int = 0,
           offset: int = 0, as_dict: bool = True) -> List[Any]:
-    """通用查询"""
     conn = get_conn()
     sql = f"SELECT {columns} FROM {table}"
     if where:
@@ -440,12 +447,9 @@ def query(table: str, columns: str = "*", where: str = "",
     if offset:
         sql += f" OFFSET {offset}"
     rows = conn.execute(sql, params).fetchall()
-    if as_dict:
-        return [dict(r) for r in rows]
-    return rows
+    return [dict(r) for r in rows] if as_dict else rows
 
 def count(table: str, where: str = "", params: tuple = ()) -> int:
-    """计数查询"""
     conn = get_conn()
     sql = f"SELECT COUNT(*) FROM {table}"
     if where:
@@ -454,11 +458,9 @@ def count(table: str, where: str = "", params: tuple = ()) -> int:
     return r[0] if r else 0
 
 def raw(sql: str, params: tuple = (), fetch: bool = True) -> Any:
-    """执行原始SQL"""
     conn = get_conn()
     if fetch:
-        rows = conn.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
     else:
         with write_lock():
             cursor = conn.execute(sql, params)
@@ -468,15 +470,9 @@ def raw(sql: str, params: tuple = (), fetch: bool = True) -> Any:
 def generate_batch_id() -> str:
     return f"BATCH_{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.urandom(4).hex()}"
 
-# 清理旧连接
-def close_connections():
-    if hasattr(_local, 'conn') and _local.conn:
-        try:
-            _local.conn.close()
-        except:
-            pass
-        _local.conn = None
-
 if __name__ == "__main__":
     init_db()
-    print("Tables created.")
+    # 测试加密
+    test = encrypt_password("mypassword")
+    print(f"加密: {test}")
+    print(f"解密: {decrypt_password(test)}")

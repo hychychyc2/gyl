@@ -1,73 +1,85 @@
 """
-芯片齐套管理系统 - 精简HTTP服务器
-使用Python内置http.server + JSON API，无需FastAPI依赖
+芯片齐套管理系统 - HTTP服务器
+Python内置http.server + JSON API
 """
-import os
-import sys
-import json
-import time
-import io
-import re
-import urllib.parse
+import os, sys, json, time, re, urllib.parse, io, threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(__file__))
 from database import (
-    init_db, get_conn, insert, insert_many, update, delete, delete_where,
-    query, count, raw, generate_batch_id, write_lock, close_connections
+    init_db, insert, insert_many, update, delete, delete_where,
+    query, count, raw, generate_batch_id, write_lock,
+    encrypt_password, decrypt_password
+)
+from email_collector import (
+    fetch_all, download_email_attachments, process_shipping_detail,
+    process_osat_inventory, process_hold_inventory, process_model_mapping,
+    process_mix_bin, process_order_allocation, parse_excel, safe_int
 )
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
-EXPORTS_DIR = os.path.join(os.path.dirname(__file__), "..", "exports")
-TEMP_DIR = os.path.join("/tmp", "chipkit_attachments")
-os.makedirs(EXPORTS_DIR, exist_ok=True)
+TEMP_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
 
+# ============ 定时任务 ============
+_scheduler_running = False
+
+def start_scheduler():
+    """启动定时邮件采集（早晚各一次）"""
+    global _scheduler_running
+    if _scheduler_running:
+        return
+    _scheduler_running = True
+
+    def _run():
+        import time as _time
+        while _scheduler_running:
+            now = datetime.now()
+            # 早上9点和晚上21点执行
+            if now.hour in (9, 21) and now.minute == 0:
+                try:
+                    print(f"⏰ 定时采集开始 ({now.strftime('%H:%M')})")
+                    fetch_all(TEMP_DIR)
+                    print(f"⏰ 定时采集完成")
+                except Exception as e:
+                    print(f"⏰ 定时采集失败: {e}")
+                _time.sleep(60)  # 避免同一分钟重复执行
+            _time.sleep(30)
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    print("⏰ 定时任务已启动（每天9:00和21:00）")
+
+# ============ 工具函数 ============
 def parse_post_body(handler):
-    """Parse POST body as JSON"""
     content_length = int(handler.headers.get('Content-Length', 0))
     body = handler.rfile.read(content_length)
-    if body:
-        return json.loads(body.decode('utf-8'))
-    return {}
+    return json.loads(body.decode('utf-8')) if body else {}
 
 def parse_multipart(handler):
-    """Parse multipart form data"""
     content_type = handler.headers.get('Content-Type', '')
     if 'multipart/form-data' not in content_type:
         return {}, {}
-    # Extract boundary
     boundary = content_type.split('boundary=')[1].strip()
     body = handler.rfile.read(int(handler.headers.get('Content-Length', 0)))
     parts = body.split(f'--{boundary}'.encode())
-    fields = {}
-    files = {}
+    fields, files = {}, {}
     for part in parts:
-        if b'Content-Disposition' not in part:
-            continue
+        if b'Content-Disposition' not in part: continue
         header_end = part.find(b'\r\n\r\n')
-        if header_end == -1:
-            continue
+        if header_end == -1: continue
         headers_raw = part[:header_end].decode('utf-8', errors='ignore')
         content = part[header_end + 4:]
-        if content.endswith(b'\r\n'):
-            content = content[:-2]
-
-        # Parse name
+        if content.endswith(b'\r\n'): content = content[:-2]
         name_match = re.search(r'name="([^"]+)"', headers_raw)
-        if not name_match:
-            continue
+        if not name_match: continue
         name = name_match.group(1)
-
-        # Check if file
         if 'filename=' in headers_raw:
             fn_match = re.search(r'filename="([^"]*)"', headers_raw)
-            filename = fn_match.group(1) if fn_match else 'unknown'
-            files[name] = (filename, content)
+            files[name] = (fn_match.group(1) if fn_match else 'unknown', content)
         else:
             fields[name] = content.decode('utf-8', errors='ignore')
-
     return fields, files
 
 def send_json(handler, data, status=200):
@@ -89,6 +101,146 @@ def send_file(handler, path, content_type=None):
     with open(path, 'rb') as f:
         handler.wfile.write(f.read())
 
+# ============ 解析 MES/ERP 格式上传 ============
+def parse_mes_inventory(file_path: str, warehouse_name: str) -> list:
+    """解析MES格式（SZKXYCL等）"""
+    rows = parse_excel(file_path, header_row=1)
+    if not rows: return []
+
+    batch_id = generate_batch_id()
+    result = []
+    for row in rows:
+        if not row.get('device', '').strip():
+            continue
+
+        # 解析生产日期/批次字段: "2529/T1GX25BH13/BIN2/BM1366_F1V24B3C1"
+        batch_raw = row.get('batch_raw', '') or row.get('生产日期/批次', '') or ''
+        parts = batch_raw.split('/') if batch_raw else []
+        date_code = parts[0] if len(parts) > 0 else ''
+        marking = parts[1] if len(parts) > 1 else ''
+        b = ''
+        tp = ''
+        for p in parts[2:]:
+            if p.startswith('BIN'):
+                b = p
+            elif p and not p.startswith('BIN'):
+                tp = p
+
+        device = row.get('device', '')
+        dpb = f"{device}{tp}{b}" if device and tp and b else ''
+
+        result.append({
+            'device': device,
+            'marking': marking,
+            'qty': safe_int(row.get('qty', 0)),
+            'bin': b,
+            'test_program': tp,
+            'warehouse_type': 'other',
+            'warehouse_name': warehouse_name,
+            'material_code': row.get('material_code', '') or row.get('产品编码', ''),
+            'product_desc': row.get('product_desc', '') or row.get('产品描述', ''),
+            'batch': batch_raw,
+            'date_code': date_code,
+            'status': row.get('status', '正常') or row.get('批号状态', '正常'),
+            'location_area': row.get('location_area', ''),
+            'device_prog_bin': dpb,
+            'import_batch': batch_id,
+        })
+    return result
+
+def parse_erp_inventory(file_path: str, warehouse_name: str) -> list:
+    """解析ERP格式（QHBS等）"""
+    rows = parse_excel(file_path, header_row=3)
+    if not rows: return []
+
+    batch_id = generate_batch_id()
+    result = []
+    for row in rows:
+        batch_raw = row.get('batch', '') or ''
+        if not batch_raw: continue
+
+        # 解析批次: "2603/P1ZX26AC34/BIN1/BM1370P2_F2V02B1C2"
+        parts = batch_raw.split('/')
+        marking = parts[1] if len(parts) > 1 else ''
+        b = ''
+        tp = ''
+        for p in parts[2:]:
+            if p.startswith('BIN'):
+                b = p
+            elif p and not p.startswith('BIN'):
+                tp = p
+
+        device = row.get('device', '') or parts[0] if len(parts) > 0 and not parts[0].startswith('P') else ''
+        # 如果 device 为空，尝试从物料编码查
+        if not device:
+            mat_code = row.get('material_code', '') or row.get('物料编码', '')
+            if mat_code:
+                dev_row = query('material_device', where='erp_code=?', params=(mat_code,))
+                if dev_row:
+                    device = dev_row[0].get('device', '')
+
+        dpb = f"{device}{tp}{b}" if device and tp and b else ''
+
+        result.append({
+            'device': device,
+            'marking': marking,
+            'qty': safe_int(row.get('qty', 0)),
+            'bin': b,
+            'test_program': tp,
+            'warehouse_type': 'bonded',
+            'warehouse_name': warehouse_name,
+            'material_code': row.get('material_code', '') or row.get('物料编码', ''),
+            'product_desc': row.get('description', '') or row.get('物料说明', ''),
+            'batch': batch_raw,
+            'status': '正常',
+            'sub_inventory': row.get('sub_inventory', '') or row.get('子库存', ''),
+            'location': row.get('location', '') or row.get('货位', ''),
+            'org': row.get('org', '') or row.get('库存组织', ''),
+            'device_prog_bin': dpb,
+            'import_batch': batch_id,
+        })
+    return result
+
+def parse_ems_inventory(file_path: str, warehouse_name: str) -> list:
+    """解析EMS库存（芯片结存统计格式）"""
+    from openpyxl import load_workbook
+    wb = load_workbook(file_path, data_only=True, read_only=True)
+    sheet = '各外EMS外协库存明细' if '各外EMS外协库存明细' in wb.sheetnames else wb.sheetnames[0]
+    ws = wb[sheet]
+
+    batch_id = generate_batch_id()
+    result = []
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row or not any(row): continue
+        v = [clean_text(x) for x in row]
+        if len(v) < 8: continue
+        device = v[3] if len(v) > 3 else ''
+        b = v[7] if len(v) > 7 else ''
+        tp = v[6] if len(v) > 6 else ''
+        dpb = f"{device}{tp}{b}" if device and tp and b else ''
+        result.append({
+            'device': device,
+            'marking': v[5] if len(v) > 5 else '',
+            'qty': safe_int(v[4]),
+            'bin': b,
+            'test_program': tp,
+            'warehouse_type': 'ems',
+            'warehouse_name': warehouse_name or (v[0] if len(v) > 0 else ''),
+            'material_code': v[1] if len(v) > 1 else '',
+            'batch': v[5] if len(v) > 5 else '',
+            'status': '正常',
+            'device_prog_bin': dpb,
+            'import_batch': batch_id,
+        })
+    wb.close()
+    return result
+
+def clean_text(t):
+    if t is None: return ''
+    if isinstance(t, (int, float)): return str(int(t)) if t == int(t) else str(t)
+    return str(t).replace('\r', '').replace('\n', '').replace('\t', '').strip()
+
+# ============ HTTP Handler ============
 class ChipKitHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(200)
@@ -98,42 +250,48 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        path = urllib.parse.urlparse(self.path).path
-        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        p = urllib.parse.urlparse(self.path)
+        path = p.path
+        qs = urllib.parse.parse_qs(p.query)
 
-        # API routes
         if path == '/api/dashboard':
-            return self.handle_dashboard()
-        elif path.startswith('/api/query/'):
-            return self.handle_generic_query(path, qs)
-        elif path.startswith('/api/count/'):
-            return self.handle_count(path, qs)
-        elif path.startswith('/api/inventory/'):
-            return self.handle_inventory(path, qs)
+            return self._dashboard()
+        elif path == '/api/query/':
+            return self._generic_query(path, qs)
+        elif path == '/api/inventory/summary':
+            return self._inv_summary()
+        elif path == '/api/inventory/pivot':
+            return self._inv_pivot(qs)
+        elif path == '/api/inventory/with_model':
+            return self._inv_with_model(qs)
         elif path.startswith('/api/shipping/'):
-            return self.handle_shipping(path, qs)
+            return self._shipping(path, qs)
         elif path.startswith('/api/model/'):
-            return self.handle_model(path, qs)
-        elif path.startswith('/api/mixbin/'):
-            return self.handle_mixbin(path)
-        elif path.startswith('/api/kit/'):
-            return self.handle_kit(path, qs)
+            return self._model(path, qs)
+        elif path == '/api/mixbin/list':
+            return self._mixbin()
+        elif path == '/api/kit/completion':
+            return self._kit(qs)
         elif path.startswith('/api/mapping/'):
-            return self.handle_mapping(path, qs)
-        elif path.startswith('/api/email_configs'):
-            return self.handle_email_configs(path, qs)
-        elif path.startswith('/api/usage/'):
-            return self.handle_usage(path)
-        elif path.startswith('/api/users'):
-            return self.handle_users()
-        elif path.startswith('/api/logs'):
-            return self.handle_logs(qs)
-        elif path.startswith('/api/export/'):
-            return self.handle_export(path)
-        elif path.startswith('/api/raw'):
-            return self.handle_raw(qs)
+            return self._mapping_get(path, qs)
+        elif path == '/api/email_configs':
+            return self._email_configs()
+        elif path == '/api/usage/list':
+            return self._usage()
+        elif path == '/api/users':
+            return self._users()
+        elif path == '/api/logs':
+            return self._logs(qs)
+        elif path == '/api/export/':
+            return self._export(path)
+        elif path == '/api/raw':
+            return self._raw(qs)
+        elif path == '/api/email/fetch_all':
+            return self._fetch_all()
+        elif path == '/api/email/fetch/':
+            return self._fetch_one(path)
 
-        # Static files
+        # 静态文件
         if path == '/' or path == '/index.html':
             return send_file(self, os.path.join(FRONTEND_DIR, 'index.html'), 'text/html')
         filepath = os.path.join(FRONTEND_DIR, path.lstrip('/'))
@@ -144,65 +302,73 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         send_json(self, {'ok': False, 'error': 'Not found'}, 404)
 
     def do_POST(self):
-        path = urllib.parse.urlparse(self.path).path
+        p = urllib.parse.urlparse(self.path)
+        path = p.path
         content_type = self.headers.get('Content-Type', '')
 
         if 'multipart/form-data' in content_type:
             fields, files = parse_multipart(self)
-            return self.handle_upload(path, fields, files)
+            return self._handle_upload(path, fields, files)
 
         body = parse_post_body(self)
 
-        if path.startswith('/api/insert/'):
-            return self.handle_insert(path, body)
-        elif path.startswith('/api/insert_many/'):
-            return self.handle_insert_many(path, body)
-        elif path.startswith('/api/query/'):
-            return self.handle_query_post(path, body)
-        elif path.startswith('/api/kit/calculate_shortage'):
-            return self.handle_calculate_shortage(body)
-        elif path.startswith('/api/shipping/auto_plan'):
-            return self.handle_auto_plan()
-        elif path.startswith('/api/email_configs/'):
-            return self.handle_email_config_post(path, body)
+        if path == '/api/query/':
+            return self._query_post(path, body)
+        elif path == '/api/insert/':
+            return self._insert(path, body)
+        elif path == '/api/insert_many/':
+            return self._insert_many(path, body)
+        elif path == '/api/kit/calculate_shortage':
+            return self._calc_shortage(body)
+        elif path == '/api/shipping/auto_plan':
+            return self._auto_plan()
+        elif path.startswith('/api/email_configs'):
+            return self._email_config_post(path, body)
         elif path.startswith('/api/mapping/'):
-            return self.handle_mapping_post(path, body)
-        elif path.startswith('/api/usage'):
-            return self.handle_usage_post(path, body)
-        elif path.startswith('/api/users'):
-            return self.handle_users_post(path, body)
+            return self._mapping_post(path, body)
+        elif path == '/api/usage':
+            return self._usage_post(body)
+        elif path == '/api/users':
+            return self._users_post(body)
 
         send_json(self, {'ok': False, 'error': 'Unknown route'}, 404)
 
     def do_PUT(self):
-        path = urllib.parse.urlparse(self.path).path
+        p = urllib.parse.urlparse(self.path)
+        path = p.path
         body = parse_post_body(self)
 
         if path.startswith('/api/update/'):
-            return self.handle_update(path, body)
+            return self._update(path, body)
         elif path.startswith('/api/mapping/'):
-            return self.handle_mapping_put(path, body)
+            return self._mapping_put(path, body)
         elif path.startswith('/api/usage/'):
-            return self.handle_usage_put(path, body)
+            return self._usage_put(path, body)
         elif path.startswith('/api/email_configs/'):
-            return self.handle_update(path, body)
+            return self._update(path, body)
 
         send_json(self, {'ok': False, 'error': 'Unknown route'}, 404)
 
     def do_DELETE(self):
-        path = urllib.parse.urlparse(self.path).path
+        p = urllib.parse.urlparse(self.path)
+        path = p.path
 
-        if path.startswith('/api/delete/'):
-            return self.handle_delete(path)
-        elif path.startswith('/api/mapping/'):
-            return self.handle_delete(path)
-        elif path.startswith('/api/email_configs/'):
-            return self.handle_delete(path)
+        parts = path.split('/')
+        try:
+            if parts[1] == 'delete':
+                ok = delete(parts[2], int(parts[3]))
+            elif parts[1] == 'mapping':
+                ok = delete(parts[2], int(parts[3]))
+            elif parts[1] == 'email_configs':
+                ok = delete('email_config', int(parts[2]))
+            else:
+                return send_json(self, {'ok': False}, 400)
+            send_json(self, {'ok': ok})
+        except Exception as e:
+            send_json(self, {'ok': False, 'error': str(e)})
 
-        send_json(self, {'ok': False, 'error': 'Unknown route'}, 404)
-
-    # ============ Handlers ============
-    def handle_dashboard(self):
+    # ============ 仪表盘 ============
+    def _dashboard(self):
         data = {
             'total_shipping': count('shipping_detail'),
             'total_inventory': count('inventory'),
@@ -214,22 +380,21 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         }
         send_json(self, {'ok': True, 'data': data})
 
-    def handle_generic_query(self, path, qs):
+    # ============ 通用查询 ============
+    def _generic_query(self, path, qs):
         parts = path.split('/')
         table = parts[3]
         where = qs.get('where', [''])[0]
         params = json.loads(qs.get('params', ['[]'])[0])
-        order_by = qs.get('order_by', [''])[0]
-        limit = int(qs.get('limit', ['0'])[0])
-        offset = int(qs.get('offset', ['0'])[0])
         try:
-            rows = query(table, where=where, params=tuple(params), order_by=order_by, limit=limit, offset=offset)
+            rows = query(table, where=where, params=tuple(params), order_by=qs.get('order_by', [''])[0],
+                         limit=int(qs.get('limit', ['0'])[0]), offset=int(qs.get('offset', ['0'])[0]))
             total = count(table, where=where, params=tuple(params))
             send_json(self, {'ok': True, 'data': rows, 'total': total})
         except Exception as e:
             send_json(self, {'ok': False, 'error': str(e)})
 
-    def handle_query_post(self, path, body):
+    def _query_post(self, path, body):
         parts = path.split('/')
         table = parts[3]
         try:
@@ -241,204 +406,175 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         except Exception as e:
             send_json(self, {'ok': False, 'error': str(e)})
 
-    def handle_count(self, path, qs):
-        parts = path.split('/')
-        table = parts[3]
-        where = qs.get('where', [''])[0]
-        params = json.loads(qs.get('params', ['[]'])[0])
-        try:
-            c = count(table, where=where, params=tuple(params))
-            send_json(self, {'ok': True, 'count': c})
-        except Exception as e:
-            send_json(self, {'ok': False, 'error': str(e)})
-
-    def handle_insert(self, path, body):
-        parts = path.split('/')
-        table = parts[3]
+    def _insert(self, path, body):
+        table = path.split('/')[3]
         try:
             rid = insert(table, body)
             send_json(self, {'ok': True, 'id': rid})
         except Exception as e:
             send_json(self, {'ok': False, 'error': str(e)})
 
-    def handle_insert_many(self, path, body):
-        parts = path.split('/')
-        table = parts[3]
+    def _insert_many(self, path, body):
+        table = path.split('/')[3]
         try:
             cnt = insert_many(table, body)
             send_json(self, {'ok': True, 'count': cnt})
         except Exception as e:
             send_json(self, {'ok': False, 'error': str(e)})
 
-    def handle_update(self, path, body):
+    def _update(self, path, body):
         parts = path.split('/')
-        # /api/update/{table}/{id}
         if len(parts) >= 5:
-            table = parts[3]
-            record_id = int(parts[4])
             try:
-                ok = update(table, record_id, body)
+                ok = update(parts[3], int(parts[4]), body)
                 send_json(self, {'ok': ok})
             except Exception as e:
                 send_json(self, {'ok': False, 'error': str(e)})
-        else:
-            send_json(self, {'ok': False, 'error': 'Invalid path'}, 400)
 
-    def handle_delete(self, path):
-        parts = path.split('/')
-        # /api/delete/{table}/{id} or /api/mapping/{table}/{id} or /api/email_configs/{id}
-        try:
-            if parts[1] == 'delete':
-                table = parts[2]
-                record_id = int(parts[3])
-            elif parts[1] == 'mapping':
-                table = parts[2]
-                record_id = int(parts[3])
-            elif parts[1] == 'email_configs':
-                table = 'email_config'
-                record_id = int(parts[2])
-            else:
-                send_json(self, {'ok': False, 'error': 'Invalid path'}, 400)
-                return
-            ok = delete(table, record_id)
-            send_json(self, {'ok': ok})
-        except Exception as e:
-            send_json(self, {'ok': False, 'error': str(e)})
+    # ============ 库存模块 ============
+    def _inv_summary(self):
+        rows = raw("SELECT warehouse_type, warehouse_name, SUM(qty) as total_qty FROM inventory GROUP BY warehouse_type, warehouse_name ORDER BY warehouse_type, total_qty DESC")
+        send_json(self, {'ok': True, 'data': rows})
 
-    def handle_inventory(self, path, qs):
-        if path == '/api/inventory/summary':
-            rows = raw("SELECT warehouse_type, warehouse_name, COUNT(*) as batch_count, SUM(qty) as total_qty FROM inventory GROUP BY warehouse_type, warehouse_name ORDER BY warehouse_type, total_qty DESC")
-            send_json(self, {'ok': True, 'data': rows})
-        elif path == '/api/inventory/with_model':
-            device = qs.get('device', [''])[0]
-            where = "WHERE i.device = ?" if device else ""
-            params = [device] if device else []
-            sql = f"""
-            SELECT i.device, i.device_prog_bin, i.bin, i.test_program, i.warehouse_name, i.warehouse_type,
-                   SUM(i.qty) as total_qty, m.model1, m.model2, m.model3, u.usage_qty
-            FROM inventory i
-            LEFT JOIN model_mapping m ON i.device_prog_bin = m.device_prog_bin
-            LEFT JOIN usage_mapping u ON i.device = u.device AND (m.model1 = u.model_name OR m.model2 = u.model_name)
-            {where}
-            GROUP BY i.device_prog_bin, i.warehouse_name, i.warehouse_type
-            ORDER BY i.device, total_qty DESC
-            """
-            rows = raw(sql, tuple(params))
-            for r in rows:
-                qty = r.get('total_qty', 0) or 0
-                usage = r.get('usage_qty', 0) or 0
-                r['machine_count'] = int(qty // usage) if usage > 0 else 0
-            send_json(self, {'ok': True, 'data': rows})
-        else:
-            send_json(self, {'ok': False, 'error': 'Unknown route'}, 404)
+    def _inv_pivot(self, qs):
+        """库存透视：按机型显示各库存类型的芯片数量"""
+        model = qs.get('model', [''])[0]
+        filter_type = qs.get('warehouse_type', [''])[0]
 
-    def handle_shipping(self, path, qs):
+        sql = """
+        SELECT m.model1, m.device, m.device_prog_bin, m.bin, m.test_program,
+               i.warehouse_type, i.warehouse_name,
+               SUM(i.qty) as total_qty,
+               u.usage_qty,
+               CASE WHEN u.usage_qty > 0 THEN SUM(i.qty) / u.usage_qty ELSE 0 END as machine_count
+        FROM model_mapping m
+        LEFT JOIN inventory i ON m.device_prog_bin = i.device_prog_bin
+        LEFT JOIN usage_mapping u ON m.device = u.device AND m.model1 = u.model_name
+        WHERE m.model1 != '' AND i.qty > 0
+        """
+        params = []
+        if model:
+            sql += " AND m.model1 LIKE ?"
+            params.append(f"%{model}%")
+        if filter_type:
+            sql += " AND i.warehouse_type = ?"
+            params.append(filter_type)
+        sql += " GROUP BY m.model1, m.device_prog_bin, i.warehouse_type, i.warehouse_name ORDER BY m.model1, total_qty DESC"
+
+        rows = raw(sql, tuple(params))
+        send_json(self, {'ok': True, 'data': rows})
+
+    def _inv_with_model(self, qs):
+        """库存关联机型"""
+        device = qs.get('device', [''])[0]
+        where = "WHERE i.device = ?" if device else ""
+        params = [device] if device else []
+        sql = f"""
+        SELECT i.*, m.model1, m.model2, m.model3, u.usage_qty,
+               CASE WHEN u.usage_qty > 0 THEN i.qty / u.usage_qty ELSE 0 END as machine_count
+        FROM inventory i
+        LEFT JOIN model_mapping m ON i.device_prog_bin = m.device_prog_bin
+        LEFT JOIN usage_mapping u ON i.device = u.device AND m.model1 = u.model_name
+        {where}
+        ORDER BY i.device, i.warehouse_type, i.qty DESC
+        LIMIT 500
+        """
+        rows = raw(sql, tuple(params))
+        send_json(self, {'ok': True, 'data': rows})
+
+    # ============ 出货明细 ============
+    def _shipping(self, path, qs):
         if path == '/api/shipping/expired':
-            rows = raw("SELECT * FROM shipping_detail WHERE shipped_qty = 0 AND ship_date < date('now', '-180 days') ORDER BY ship_date DESC")
-            send_json(self, {'ok': True, 'data': rows, 'total': len(rows)})
+            rows = raw("SELECT * FROM shipping_detail WHERE shipped_qty=0 AND ship_date<date('now','-180 days') ORDER BY ship_date DESC LIMIT 200")
+            send_json(self, {'ok': True, 'data': rows})
+        elif path == '/api/shipping/summary':
+            rows = raw("SELECT osat, device_pn, bin, test_program, COUNT(*) as cnt, SUM(good_qty) as total FROM shipping_detail GROUP BY osat, device_pn, bin, test_program ORDER BY total DESC LIMIT 200")
+            send_json(self, {'ok': True, 'data': rows})
         else:
-            send_json(self, {'ok': False, 'error': 'Unknown route'}, 404)
+            send_json(self, {'ok': False}, 404)
 
-    def handle_model(self, path, qs):
+    # ============ 机型对照 ============
+    def _model(self, path, qs):
         if path == '/api/model/mapping':
-            device = qs.get('device', [''])[0]
-            model_name = qs.get('model_name', [''])[0]
-            where = []
-            params = []
-            if device:
-                where.append('device LIKE ?')
-                params.append(f'%{device}%')
-            if model_name:
-                where.append('(model1 LIKE ? OR model2 LIKE ?)')
-                params.extend([f'%{model_name}%', f'%{model_name}%'])
+            where = []; params = []
+            for k in ['device','model1']:
+                if qs.get(k, [''])[0]:
+                    where.append(f"{k} LIKE ?"); params.append(f"%{qs[k][0]}%")
             sql = "SELECT * FROM model_mapping"
-            if where:
-                sql += " WHERE " + " AND ".join(where)
+            if where: sql += " WHERE " + " AND ".join(where)
             sql += " ORDER BY device, bin LIMIT 500"
-            rows = raw(sql, tuple(params))
-            send_json(self, {'ok': True, 'data': rows, 'total': len(rows)})
+            send_json(self, {'ok': True, 'data': raw(sql, tuple(params))})
         elif path == '/api/model/with_stock':
             rows = raw("""
             SELECT m.*, COALESCE(i.total_qty, 0) as stock_qty, u.usage_qty,
-                   CASE WHEN u.usage_qty > 0 THEN COALESCE(i.total_qty, 0) / u.usage_qty ELSE 0 END as machine_count
+                   CASE WHEN u.usage_qty>0 THEN COALESCE(i.total_qty,0)/u.usage_qty ELSE 0 END as machine_count
             FROM model_mapping m
-            LEFT JOIN (SELECT device_prog_bin, SUM(qty) as total_qty FROM inventory GROUP BY device_prog_bin) i ON m.device_prog_bin = i.device_prog_bin
-            LEFT JOIN usage_mapping u ON m.device = u.device AND m.model1 = u.model_name
+            LEFT JOIN (SELECT device_prog_bin, SUM(qty) as total_qty FROM inventory GROUP BY device_prog_bin) i ON m.device_prog_bin=i.device_prog_bin
+            LEFT JOIN usage_mapping u ON m.device=u.device AND m.model1=u.model_name
             ORDER BY m.device, m.bin LIMIT 500
             """)
             send_json(self, {'ok': True, 'data': rows})
-        else:
-            send_json(self, {'ok': False, 'error': 'Unknown route'}, 404)
+        elif path == '/api/model/exclusive':
+            rows = query('model_mapping', where='exclusive_bin=1', order_by='device, bin')
+            send_json(self, {'ok': True, 'data': rows})
 
-    def handle_mixbin(self, path):
-        rows = query('mix_bin', order_by='device, bin')
+    def _mixbin(self):
+        send_json(self, {'ok': True, 'data': query('mix_bin', order_by='device, bin')})
+
+    # ============ 齐套达成 ============
+    def _kit(self, qs):
+        rows = query('kit_completion', order_by='region, device, subcontractor')
+        for r in rows:
+            for f in ['month_plan','shortage','actual_ship','planned_arrival']:
+                try: r[f] = json.loads(r.get(f,'{}') or '{}')
+                except: r[f] = {}
         send_json(self, {'ok': True, 'data': rows})
 
-    def handle_kit(self, path, qs):
-        if path == '/api/kit/completion':
-            region = qs.get('region', [''])[0]
-            where = "region = ?" if region else ""
-            params = (region,) if region else ()
-            rows = query('kit_completion', where=where, params=params, order_by='region, location, device, subcontractor')
-            for r in rows:
-                for field in ['month_plan', 'shortage', 'actual_ship', 'planned_arrival']:
-                    try:
-                        r[field] = json.loads(r.get(field, '{}') or '{}')
-                    except:
-                        r[field] = {}
-            send_json(self, {'ok': True, 'data': rows})
-        else:
-            send_json(self, {'ok': False, 'error': 'Unknown route'}, 404)
-
-    def handle_calculate_shortage(self, body):
+    def _calc_shortage(self, body):
         region = body.get('region', '')
-        where = 'region = ?' if region else ''
+        where = 'region=?' if region else ''
         params = (region,) if region else ()
         rows = query('kit_completion', where=where, params=params)
-        results = []
         for r in rows:
-            month_plan = json.loads(r.get('month_plan', '{}') or '{}')
-            usage = r.get('usage_per_unit', 0) or 0
-            initial_stock = r.get('initial_stock', 0) or 0
+            mp = json.loads(r.get('month_plan','{}') or '{}')
+            usage = r.get('usage_per_unit',0) or 0
+            stock = r.get('initial_stock',0) or 0
+            cum = stock
             shortage = {}
-            cumulative = initial_stock
-            for month, plan in sorted(month_plan.items()):
-                needed = int(plan) * usage if usage else 0
-                cumulative -= needed
-                shortage[month] = cumulative
+            for m, plan in sorted(mp.items()):
+                cum -= int(plan) * usage
+                shortage[m] = cum
             update('kit_completion', r['id'], {
                 'shortage': json.dumps(shortage, ensure_ascii=False),
-                'version': r.get('version', 1)
+                'version': r.get('version',1)
             })
-            results.append({**r, 'shortage': shortage})
-        send_json(self, {'ok': True, 'data': results})
+        send_json(self, {'ok': True, 'data': rows})
 
-    def handle_auto_plan(self):
+    def _auto_plan(self):
         kits = query('kit_completion')
         plans = []
         for kit in kits:
-            shortage = json.loads(kit.get('shortage', '{}') or '{}')
+            shortage = json.loads(kit.get('shortage','{}') or '{}')
             total = sum(abs(v) for v in shortage.values() if v < 0)
-            if total <= 0:
-                continue
-            device = kit.get('device', '')
+            if total <= 0: continue
+            device = kit.get('device','')
             stocks = query('inventory', where='device=? AND warehouse_type IN (?,?,?)',
-                          params=(device, 'osat', 'bonded', 'other'),
+                          params=(device,'osat','bonded','other'),
                           order_by='CASE warehouse_type WHEN "osat" THEN 1 WHEN "bonded" THEN 2 ELSE 3 END')
             remaining = total
-            for stock in stocks:
+            for s in stocks:
                 if remaining <= 0: break
-                qty = min(stock.get('qty', 0), remaining)
+                qty = min(s.get('qty',0), remaining)
                 if qty <= 0: continue
                 plans.append({
                     'plan_date': datetime.now().strftime('%Y-%m-%d'),
-                    'osat': stock.get('warehouse_name', ''),
-                    'device': device, 'bin': stock.get('bin', ''), 'qty': qty,
-                    'from_warehouse': stock.get('warehouse_name', ''),
-                    'warehouse_type': stock.get('warehouse_type', ''),
-                    'ship_to': kit.get('subcontractor', ''),
-                    'model_name': kit.get('model_name', ''),
-                    'project': kit.get('project', ''), 'status': '待确认',
+                    'osat': s.get('warehouse_name',''), 'device': device,
+                    'bin': s.get('bin',''), 'qty': qty,
+                    'from_warehouse': s.get('warehouse_name',''),
+                    'warehouse_type': s.get('warehouse_type',''),
+                    'ship_to': kit.get('subcontractor',''),
+                    'model_name': kit.get('model_name',''),
+                    'project': kit.get('project',''), 'status': '待确认',
                 })
                 remaining -= qty
         if plans:
@@ -446,253 +582,198 @@ class ChipKitHandler(BaseHTTPRequestHandler):
             insert_many('shipping_plan', plans)
         send_json(self, {'ok': True, 'data': plans, 'total': len(plans)})
 
-    def handle_mapping(self, path, qs):
-        parts = path.split('/')
-        table = parts[2] if len(parts) > 2 else ''
-        valid = {'subcontractor_mapping', 'logistics_time', 'material_device'}
-        if table not in valid:
-            send_json(self, {'ok': False, 'error': 'Invalid table'}, 400)
-            return
-        search = qs.get('search', [''])[0]
-        where = ''
-        params = []
-        if search and table == 'subcontractor_mapping':
-            where = 'short_name LIKE ? OR internal_code LIKE ? OR external_name LIKE ?'
-            params = [f'%{search}%'] * 3
-        elif search and table == 'material_device':
-            where = 'erp_code LIKE ? OR device LIKE ?'
-            params = [f'%{search}%'] * 2
-        elif search and table == 'logistics_time':
-            where = 'destination LIKE ?'
-            params = [f'%{search}%']
-        rows = query(table, where=where, params=tuple(params))
-        send_json(self, {'ok': True, 'data': rows})
+    # ============ 映射管理 ============
+    def _mapping_get(self, path, qs):
+        table = path.split('/')[2]
+        if table not in ('subcontractor_mapping','logistics_time','material_device'):
+            return send_json(self, {'ok': False}, 400)
+        search = qs.get('search',[''])[0]
+        where = ''; params = ()
+        if search:
+            if table == 'subcontractor_mapping':
+                where = 'short_name LIKE ? OR internal_code LIKE ?'
+                params = (f'%{search}%',)*2
+            elif table == 'material_device':
+                where = 'erp_code LIKE ? OR device LIKE ?'
+                params = (f'%{search}%',)*2
+        send_json(self, {'ok': True, 'data': query(table, where=where, params=params)})
 
-    def handle_mapping_post(self, path, body):
-        parts = path.split('/')
-        table = parts[2]
-        valid = {'subcontractor_mapping', 'logistics_time', 'material_device'}
-        if table not in valid:
-            send_json(self, {'ok': False, 'error': 'Invalid table'}, 400)
-            return
+    def _mapping_post(self, path, body):
+        table = path.split('/')[2]
         rid = insert(table, body)
         send_json(self, {'ok': True, 'id': rid})
 
-    def handle_mapping_put(self, path, body):
+    def _mapping_put(self, path, body):
         parts = path.split('/')
-        table = parts[2]
-        record_id = int(parts[3])
-        ok = update(table, record_id, body)
+        ok = update(parts[2], int(parts[3]), body)
         send_json(self, {'ok': ok})
 
-    def handle_email_configs(self, path, qs):
+    # ============ 邮件配置 ============
+    def _email_configs(self):
         rows = query('email_config', order_by='purpose')
         for r in rows:
-            if r.get('password_blob'):
-                r['password_blob'] = '********'
+            if r.get('password_encrypted'):
+                r['password_encrypted'] = '********'
         send_json(self, {'ok': True, 'data': rows})
 
-    def handle_email_config_post(self, path, body):
+    def _email_config_post(self, path, body):
         if len(path.split('/')) > 3:
             # /api/email_configs/{id}/fetch
-            record_id = int(path.split('/')[2])
-            try:
-                from email_collector import download_email_attachments, process_shipping_detail, process_inventory, process_model_mapping, process_mix_bin, process_order_allocation
-                cfg = query('email_config', where='id=?', params=(record_id,))
-                if not cfg:
-                    return send_json(self, {'ok': False, 'error': '配置不存在'})
-                cfg = dict(cfg[0])
-                file_path = download_email_attachments(cfg, TEMP_DIR)
-                if not file_path:
-                    return send_json(self, {'ok': False, 'error': '未找到附件'})
-                count = 0
-                purpose = cfg.get('purpose', '')
-                if purpose == 'shipping_detail':
-                    count = process_shipping_detail(file_path, cfg)
-                elif purpose == 'inventory':
-                    count = process_inventory(file_path, cfg)
-                elif purpose == 'model_mapping':
-                    count = process_model_mapping(file_path, cfg)
-                elif purpose == 'mix_bin':
-                    count = process_mix_bin(file_path, cfg)
-                elif purpose == 'order_allocation':
-                    count = process_order_allocation(file_path, cfg)
-                update('email_config', record_id, {
-                    'last_fetch': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'version': cfg.get('version', 1)
-                })
-                return send_json(self, {'ok': True, 'count': count})
-            except Exception as e:
-                return send_json(self, {'ok': False, 'error': str(e)})
+            rid = int(path.split('/')[2])
+            cfg = dict(query('email_config', where='id=?', params=(rid,))[0])
+            fp = download_email_attachments(cfg, TEMP_DIR)
+            if not fp: return send_json(self, {'ok': False, 'error': '未找到附件'})
+            count = 0
+            p = cfg.get('purpose','')
+            if p == 'shipping_detail': count = process_shipping_detail(fp, cfg)
+            elif p == 'osat_inventory': count = process_osat_inventory(fp, cfg)
+            elif p == 'hold_inventory': count = process_hold_inventory(fp, cfg)
+            elif p == 'model_mapping': count = process_model_mapping(fp, cfg)
+            elif p == 'mix_bin': count = process_mix_bin(fp, cfg)
+            elif p == 'order_allocation': count = process_order_allocation(fp, cfg)
+            update('email_config', rid, {'last_fetch': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'version': cfg.get('version',1)})
+            try: os.remove(fp)
+            except: pass
+            return send_json(self, {'ok': True, 'count': count})
         else:
+            # 新增配置，加密密码
+            if 'password_encrypted' in body and body['password_encrypted'] and body['password_encrypted'] != '********':
+                body['password_encrypted'] = encrypt_password(body['password_encrypted'])
             rid = insert('email_config', body)
             return send_json(self, {'ok': True, 'id': rid})
 
-    def handle_upload(self, path, fields, files):
-        if path == '/api/upload/inventory':
-            if 'file' not in files:
-                return send_json(self, {'ok': False, 'error': 'No file'})
-            filename, content = files['file']
-            filepath = os.path.join(TEMP_DIR, f"upload_{int(time.time())}_{filename}")
-            with open(filepath, 'wb') as f:
-                f.write(content)
-            try:
-                from email_collector import parse_excel, generate_batch_id
-                warehouse_type = fields.get('warehouse_type', 'other')
-                warehouse_name = fields.get('warehouse_name', '')
-                sheet_name = fields.get('sheet_name', 'Sheet1')
-                header_row = int(fields.get('header_row', '1'))
-                rows = parse_excel(filepath, sheet_name, header_row)
+    def _fetch_all(self):
+        """手动触发全部采集"""
+        results = fetch_all(TEMP_DIR)
+        send_json(self, {'ok': True, 'results': results})
+
+    def _fetch_one(self, path):
+        rid = int(path.split('/')[-1])
+        cfg = dict(query('email_config', where='id=?', params=(rid,))[0])
+        fp = download_email_attachments(cfg, TEMP_DIR)
+        if not fp: return send_json(self, {'ok': False, 'error': '未找到附件'})
+        count = 0
+        p = cfg.get('purpose','')
+        if p == 'shipping_detail': count = process_shipping_detail(fp, cfg)
+        elif p == 'osat_inventory': count = process_osat_inventory(fp, cfg)
+        elif p == 'hold_inventory': count = process_hold_inventory(fp, cfg)
+        elif p == 'model_mapping': count = process_model_mapping(fp, cfg)
+        elif p == 'mix_bin': count = process_mix_bin(fp, cfg)
+        elif p == 'order_allocation': count = process_order_allocation(fp, cfg)
+        update('email_config', rid, {'last_fetch': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'version': cfg.get('version',1)})
+        try: os.remove(fp)
+        except: pass
+        send_json(self, {'ok': True, 'count': count})
+
+    # ============ 文件上传 ============
+    def _handle_upload(self, path, fields, files):
+        if 'file' not in files: return send_json(self, {'ok': False, 'error': 'No file'})
+
+        filename, content = files['file']
+        fp = os.path.join(TEMP_DIR, f"upload_{int(time.time())}_{filename}")
+        with open(fp, 'wb') as f: f.write(content)
+
+        try:
+            if path == '/api/upload/inventory':
+                wh_type = fields.get('warehouse_type', 'other')
+                wh_name = fields.get('warehouse_name', '')
+                format_type = fields.get('format_type', 'mes')
+
+                if format_type == 'mes':
+                    rows = parse_mes_inventory(fp, wh_name)
+                elif format_type == 'erp':
+                    rows = parse_erp_inventory(fp, wh_name)
+                elif format_type == 'ems':
+                    rows = parse_ems_inventory(fp, wh_name)
+                else:
+                    return send_json(self, {'ok': False, 'error': '未知格式类型'})
+
                 if not rows:
-                    return send_json(self, {'ok': False, 'error': '文件解析无数据'})
-                batch_id = generate_batch_id()
-                inv_rows = []
-                for row in rows:
-                    device = row.get('device', '')
-                    marking = row.get('marking', '')
-                    b = row.get('bin', '')
-                    tp = row.get('test_program', '')
-                    dpb = f"{device}{tp}{b}" if device and tp and b else ''
-                    inv_rows.append({
-                        'device': device, 'marking': marking,
-                        'qty': int(row.get('qty', 0) or 0),
-                        'bin': b, 'test_program': tp,
-                        'location_code': row.get('location_code', warehouse_name),
-                        'warehouse_type': warehouse_type, 'warehouse_name': warehouse_name,
-                        'batch': row.get('batch', ''), 'date_code': row.get('date_code', ''),
-                        'material_code': row.get('material_code', ''),
-                        'status': row.get('status', '正常'),
-                        'device_prog_bin': dpb, 'import_batch': batch_id,
-                    })
-                cnt = insert_many('inventory', inv_rows)
-                return send_json(self, {'ok': True, 'count': cnt, 'batch_id': batch_id})
-            finally:
-                try: os.remove(filepath)
-                except: pass
-        elif path == '/api/upload/shipping':
-            if 'file' not in files:
-                return send_json(self, {'ok': False, 'error': 'No file'})
-            filename, content = files['file']
-            filepath = os.path.join(TEMP_DIR, f"ship_{int(time.time())}_{filename}")
-            with open(filepath, 'wb') as f:
-                f.write(content)
-            try:
-                from email_collector import parse_excel, generate_batch_id
-                rows = parse_excel(filepath, 'Sheet1', 1)
+                    return send_json(self, {'ok': False, 'error': '解析无数据'})
+
+                # 覆盖该仓库类型+名称的旧数据
+                delete_where('inventory', warehouse_type=wh_type, warehouse_name=wh_name)
+                cnt = insert_many('inventory', rows)
+                return send_json(self, {'ok': True, 'count': cnt, 'warehouse_type': wh_type, 'warehouse_name': wh_name})
+
+            elif path == '/api/upload/shipping':
+                rows = parse_excel(fp, header_row=3)
+                if not rows: return send_json(self, {'ok': False, 'error': '解析无数据'})
                 batch_id = generate_batch_id()
                 ship_rows = []
                 for row in rows:
+                    if not row.get('device_pn','').strip() and not row.get('entity','').strip(): continue
                     ship_rows.append({
-                        'entity': row.get('entity', ''), 'ship_date': row.get('ship_date', ''),
-                        'device_pn': row.get('device_pn', ''), 'wafer_lot_id': row.get('wafer_lot_id', ''),
-                        'marking': row.get('marking', ''),
-                        'good_qty': int(row.get('good_qty', 0) or 0),
-                        'bin': row.get('bin', ''), 'invoice_no': row.get('invoice_no', ''),
-                        'test_program': row.get('test_program', ''), 'osat': row.get('osat', ''),
-                        'ship_to': row.get('ship_to', ''), 'test_wo': row.get('test_wo', ''),
-                        'date_code': row.get('date_code', ''),
-                        'po': row.get('po', '暂无'), 'source': 'upload', 'import_batch': batch_id,
+                        'entity': row.get('entity',''), 'ship_date': row.get('ship_date',''),
+                        'device_pn': row.get('device_pn',''), 'wafer_lot_id': row.get('wafer_lot_id',''),
+                        'marking': row.get('marking',''), 'good_qty': safe_int(row.get('good_qty',0)),
+                        'bin': row.get('bin',''), 'invoice_no': row.get('invoice_no',''),
+                        'test_program': row.get('test_program',''), 'osat': row.get('osat',''),
+                        'ship_to': row.get('ship_to',''), 'test_wo': row.get('test_wo',''),
+                        'po': row.get('po','暂无'), 'source': 'upload', 'import_batch': batch_id,
                     })
                 cnt = insert_many('shipping_detail', ship_rows)
-                return send_json(self, {'ok': True, 'count': cnt, 'batch_id': batch_id})
-            finally:
-                try: os.remove(filepath)
-                except: pass
-        elif path == '/api/upload/erp_inventory':
-            if 'file' not in files:
-                return send_json(self, {'ok': False, 'error': 'No file'})
-            filename, content = files['file']
-            filepath = os.path.join(TEMP_DIR, f"erp_{int(time.time())}_{filename}")
-            with open(filepath, 'wb') as f:
-                f.write(content)
-            try:
-                from email_collector import parse_excel, generate_batch_id
-                rows = parse_excel(filepath, 'Sheet1', 1)
-                batch_id = generate_batch_id()
-                erp_rows = []
-                for row in rows:
-                    device = row.get('device', '')
-                    b = row.get('bin', '')
-                    tp = row.get('test_program', '')
-                    dpb = f"{device}{tp}{b}" if device and tp and b else ''
-                    erp_rows.append({
-                        'org': row.get('org', ''), 'material_code': row.get('material_code', ''),
-                        'description': row.get('description', ''),
-                        'sub_inventory': row.get('sub_inventory', ''),
-                        'location': row.get('location', ''),
-                        'batch': row.get('batch', ''),
-                        'qty': int(row.get('qty', 0) or 0),
-                        'device': device, 'bin': b, 'test_program': tp,
-                        'device_prog_bin': dpb, 'import_batch': batch_id,
-                    })
-                cnt = insert_many('erp_inventory', erp_rows)
-                return send_json(self, {'ok': True, 'count': cnt, 'batch_id': batch_id})
-            finally:
-                try: os.remove(filepath)
-                except: pass
-        send_json(self, {'ok': False, 'error': 'Unknown upload route'}, 404)
+                return send_json(self, {'ok': True, 'count': cnt})
 
-    def handle_usage(self, path):
-        rows = query('usage_mapping', order_by='device, model_name')
-        send_json(self, {'ok': True, 'data': rows})
+            elif path == '/api/upload/erp_inventory':
+                rows = parse_erp_inventory(fp, fields.get('warehouse_name','QHBS'))
+                cnt = insert_many('erp_inventory', rows)
+                return send_json(self, {'ok': True, 'count': cnt})
 
-    def handle_usage_post(self, path, body):
-        rid = insert('usage_mapping', body)
-        send_json(self, {'ok': True, 'id': rid})
+        finally:
+            try: os.remove(fp)
+            except: pass
 
-    def handle_usage_put(self, path, body):
-        parts = path.split('/')
-        record_id = int(parts[2])
-        ok = update('usage_mapping', record_id, body)
+        send_json(self, {'ok': False}, 404)
+
+    # ============ 其他 ============
+    def _usage(self):
+        send_json(self, {'ok': True, 'data': query('usage_mapping', order_by='device, model_name')})
+
+    def _usage_post(self, body):
+        send_json(self, {'ok': True, 'id': insert('usage_mapping', body)})
+
+    def _usage_put(self, path, body):
+        ok = update('usage_mapping', int(path.split('/')[2]), body)
         send_json(self, {'ok': ok})
 
-    def handle_users(self):
-        rows = query('users', columns='id, email, name, role, active, created_at')
-        send_json(self, {'ok': True, 'data': rows})
+    def _users(self):
+        send_json(self, {'ok': True, 'data': query('users', columns='id,email,name,role,active,created_at')})
 
-    def handle_users_post(self, path, body):
-        rid = insert('users', body)
-        send_json(self, {'ok': True, 'id': rid})
+    def _users_post(self, body):
+        send_json(self, {'ok': True, 'id': insert('users', body)})
 
-    def handle_logs(self, qs):
-        limit = int(qs.get('limit', ['100'])[0])
-        rows = query('operation_log', order_by='created_at DESC', limit=limit)
-        send_json(self, {'ok': True, 'data': rows})
+    def _logs(self, qs):
+        limit = int(qs.get('limit',['100'])[0])
+        send_json(self, {'ok': True, 'data': query('operation_log', order_by='created_at DESC', limit=limit)})
 
-    def handle_export(self, path):
-        parts = path.split('/')
-        table = parts[3]
+    def _export(self, path):
+        table = path.split('/')[3]
+        rows = query(table, limit=50000)
+        filepath = os.path.join(os.path.dirname(__file__), '..', 'exports', f"{table}_{datetime.now().strftime('%Y%m%d')}.json")
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(rows, f, ensure_ascii=False, indent=2)
+        send_file(self, filepath, 'application/json')
+
+    def _raw(self, qs):
+        sql = qs.get('sql',[''])[0]
+        params = json.loads(qs.get('params',['[]'])[0])
         try:
-            rows = query(table, limit=50000)
-            filepath = os.path.join(EXPORTS_DIR, f"{table}_{datetime.now().strftime('%Y%m%d')}.json")
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(rows, f, ensure_ascii=False, indent=2)
-            send_file(self, filepath, 'application/json')
-        except Exception as e:
-            send_json(self, {'ok': False, 'error': str(e)})
-
-    def handle_raw(self, qs):
-        sql = qs.get('sql', [''])[0]
-        params = json.loads(qs.get('params', ['[]'])[0])
-        fetch = qs.get('fetch', ['true'])[0] == 'true'
-        try:
-            if fetch:
-                rows = raw(sql, tuple(params), fetch=True)
-                send_json(self, {'ok': True, 'data': rows})
-            else:
-                cnt = raw(sql, tuple(params), fetch=False)
-                send_json(self, {'ok': True, 'count': cnt})
+            rows = raw(sql, tuple(params), fetch=qs.get('fetch',['true'])[0]=='true')
+            send_json(self, {'ok': True, 'data': rows} if isinstance(rows, list) else {'ok': True, 'count': rows})
         except Exception as e:
             send_json(self, {'ok': False, 'error': str(e)})
 
     def log_message(self, format, *args):
-        pass  # Quiet
+        pass
 
 def main():
     init_db()
+    start_scheduler()
     port = 8765
     server = HTTPServer(('0.0.0.0', port), ChipKitHandler)
-    print(f"🦞 芯片齐套管理系统启动: http://localhost:{port}")
+    print(f"🦞 芯片齐套管理系统: http://localhost:{port}")
+    print(f"⏰ 定时采集: 每天 9:00 和 21:00")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
