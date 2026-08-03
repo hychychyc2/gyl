@@ -650,9 +650,9 @@ async function settings() {
 
 // ============ 初始化 ============
 function init() {
-  const nav = $('#nav-menu');
+  const navEl = $('#nav-menu');
   App.modules.forEach(mod => {
-    nav.appendChild(el('div', { class: `nav-item ${mod.id === 'dashboard' ? 'active' : ''}`, 'data-mod': mod.id, onclick: () => nav(mod.id) }, `${mod.name}`));
+    navEl.appendChild(el('div', { class: `nav-item ${mod.id === 'dashboard' ? 'active' : ''}`, 'data-mod': mod.id, onclick: () => nav(mod.id) }, `${mod.name}`));
   });
   nav('dashboard');
 }
