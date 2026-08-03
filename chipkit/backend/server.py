@@ -364,15 +364,20 @@ class ChipKitHandler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         p = urllib.parse.urlparse(self.path)
         path = p.path
-
         parts = path.split('/')
         try:
-            if parts[1] == 'delete':
-                ok = delete(parts[2], int(parts[3]))
-            elif parts[1] == 'mapping':
-                ok = delete(parts[2], int(parts[3]))
-            elif parts[1] == 'email_configs':
-                ok = delete('email_config', int(parts[2]))
+            # /api/delete/{table}/{id}
+            if len(parts) >= 4 and parts[2] == 'delete':
+                ok = delete(parts[3], int(parts[4]))
+            # /api/mapping/{table}/{id}
+            elif len(parts) >= 4 and parts[2] == 'mapping':
+                ok = delete(parts[3], int(parts[4]))
+            # /api/email_configs/{id}
+            elif len(parts) >= 3 and parts[2] == 'email_configs':
+                ok = delete('email_config', int(parts[3]))
+            # /api/usage/{id}
+            elif len(parts) >= 3 and parts[2] == 'usage':
+                ok = delete('usage_mapping', int(parts[3]))
             else:
                 return send_json(self, {'ok': False}, 400)
             send_json(self, {'ok': ok})
@@ -479,8 +484,8 @@ class ChipKitHandler(BaseHTTPRequestHandler):
     def _inv_with_model(self, qs):
         """库存关联机型"""
         device = qs.get('device', [''])[0]
-        where = "WHERE i.device = ?" if device else ""
-        params = [device] if device else []
+        where = "WHERE i.device LIKE ?" if device else ""
+        params = [f'{device}%'] if device else []
         sql = f"""
         SELECT i.device, i.device_prog_bin, i.bin, i.test_program,
                i.warehouse_name, i.warehouse_type,
@@ -751,7 +756,7 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         send_json(self, {'ok': True, 'id': insert('usage_mapping', body)})
 
     def _usage_put(self, path, body):
-        ok = update('usage_mapping', int(path.split('/')[2]), body)
+        ok = update('usage_mapping', int(path.split('/')[3]), body)
         send_json(self, {'ok': ok})
 
     def _users(self):
