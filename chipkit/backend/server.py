@@ -4,6 +4,11 @@ Python内置http.server + JSON API
 """
 import os, sys, json, time, re, urllib.parse, io, threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
+
+class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+    """多线程HTTP服务器"""
+    daemon_threads = True
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -83,11 +88,14 @@ def parse_multipart(handler):
     return fields, files
 
 def send_json(handler, data, status=200):
-    handler.send_response(status)
-    handler.send_header('Content-Type', 'application/json; charset=utf-8')
-    handler.send_header('Access-Control-Allow-Origin', '*')
-    handler.end_headers()
-    handler.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
+    try:
+        handler.send_response(status)
+        handler.send_header('Content-Type', 'application/json; charset=utf-8')
+        handler.send_header('Access-Control-Allow-Origin', '*')
+        handler.end_headers()
+        handler.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
+    except (BrokenPipeError, ConnectionResetError):
+        pass
 
 def send_file(handler, path, content_type=None):
     if not os.path.exists(path):
@@ -771,7 +779,7 @@ def main():
     init_db()
     start_scheduler()
     port = 8765
-    server = HTTPServer(('0.0.0.0', port), ChipKitHandler)
+    server = ThreadingHTTPServer(('0.0.0.0', port), ChipKitHandler)
     print(f"🦞 芯片齐套管理系统: http://localhost:{port}")
     print(f"⏰ 定时采集: 每天 9:00 和 21:00")
     try:
