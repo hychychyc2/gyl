@@ -7,8 +7,14 @@ async function api(path, opts = {}) {
   const url = API + path;
   const o = { headers: { 'Content-Type': 'application/json' }, ...opts };
   if (o.body && typeof o.body === 'object') o.body = JSON.stringify(o.body);
-  const r = await fetch(url, o);
-  return r.json();
+  try {
+    const r = await fetch(url, o);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  } catch (err) {
+    console.error('API error:', url, err);
+    return { ok: false, error: err.message };
+  }
 }
 
 function $(s) { return document.querySelector(s); }
@@ -118,7 +124,7 @@ async function nav(id) {
 async function dashboard() {
   const m = $('#main');
   const r = await api('/api/dashboard');
-  if (!r.ok) { m.innerHTML = `<div class="error">${r.error}</div>`; return; }
+  if (!r.ok) { m.innerHTML = `<div class="error">连接服务器失败: ${r.error || '请确认后端已启动 (python server.py)'}</div>`; return; }
 
   const d = r.data;
   m.innerHTML = '';
