@@ -264,7 +264,9 @@ class ChipKitHandler(BaseHTTPRequestHandler):
 
         if path == '/api/dashboard':
             return self._dashboard()
-        elif path == '/api/query/':
+        elif path.startswith('/api/query/'):
+            return self._generic_query(path, qs)
+        elif path == '/api/query':
             return self._generic_query(path, qs)
         elif path == '/api/inventory/summary':
             return self._inv_summary()
@@ -320,7 +322,9 @@ class ChipKitHandler(BaseHTTPRequestHandler):
 
         body = parse_post_body(self)
 
-        if path == '/api/query/':
+        if path.startswith('/api/query/'):
+            return self._query_post(path, body)
+        elif path == '/api/query':
             return self._query_post(path, body)
         elif path == '/api/insert/':
             return self._insert(path, body)
@@ -404,7 +408,7 @@ class ChipKitHandler(BaseHTTPRequestHandler):
 
     def _query_post(self, path, body):
         parts = path.split('/')
-        table = parts[3]
+        table = body.get('table', parts[3] if len(parts) > 3 else '')
         try:
             rows = query(table, where=body.get('where', ''), params=tuple(body.get('params', [])),
                          order_by=body.get('order_by', ''), limit=body.get('limit', 0),
@@ -592,7 +596,7 @@ class ChipKitHandler(BaseHTTPRequestHandler):
 
     # ============ 映射管理 ============
     def _mapping_get(self, path, qs):
-        table = path.split('/')[2]
+        table = path.split('/')[3]
         if table not in ('subcontractor_mapping','logistics_time','material_device'):
             return send_json(self, {'ok': False}, 400)
         search = qs.get('search',[''])[0]
@@ -607,13 +611,13 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         send_json(self, {'ok': True, 'data': query(table, where=where, params=params)})
 
     def _mapping_post(self, path, body):
-        table = path.split('/')[2]
+        table = path.split('/')[3]
         rid = insert(table, body)
         send_json(self, {'ok': True, 'id': rid})
 
     def _mapping_put(self, path, body):
         parts = path.split('/')
-        ok = update(parts[2], int(parts[3]), body)
+        ok = update(parts[3], int(parts[4]), body)
         send_json(self, {'ok': ok})
 
     # ============ 邮件配置 ============
