@@ -28,8 +28,14 @@ SMTP_PORT = 587
 EMAIL_ACCOUNT = "yuchuan.he@casue.com"
 EMAIL_PASSWORD = "-DxpOD5kkN)(RuPgAK-p"
 SOURCE_EMAIL = "na.yang_w@casue.com"
-REPORT_EMAILS = ["yuchuan.he@casue.com", "haixia.lu@casue.com", "yunrui.chen@casue.com", "na.yang_w@casue.com", "yujia.cheng@casue.com"]
+REPORT_EMAILS = ["yuchuan.he@casue.com", "haixia.lu@casue.com", "yunrui.chen@casue.com", "na.yang_w@casue.com", "yujia.cheng@casue.com", "xinyan.song@casue.com"]
 DOMESTIC_REPORT_EMAIL = "LH-SJXPC@cbscs.com"
+
+# 前海保税区邮件收件人
+QIANHAI_TO = ["na.yang_w@casue.com", "qhlhsw01@cbscs.com", "qhlhck@cbscs.com", "fuxia.ping@cbscs.com"]
+QIANHAI_CC = ["yisheng.chen@cbscs.com", "feng.rongkuan@hkyhg.com", "long.sh@hkyhg.com",
+              "yhg_service1@hkyhg.com", "xu.miao@cbscs.com", "kang.he@casue.com", "chunmiao.fu_w@casue.com",
+              "lili_w@casue.com", "jiahuan.liu@casue.com", "ying.zhang02@casue.com", "yuanqin.zhu@casue.com", "log@casue.com"]
 
 # ==================== 数据 (动态从邮件获取) ====================
 DOMESTIC_ITEMS = []
@@ -111,15 +117,18 @@ def load_price_map():
                 prices[str(model).upper().strip()] = float(price)
         MODEL_PRICE_MAP = prices
         
-        # 2. 从 价目表0601 sheet 加载物料编码→价格（精确匹配）
+        # 2. 从 价目表 sheet 加载物料编码→价格（精确匹配）
         code_prices = {}
-        if '价目表0601' in wb.sheetnames:
-            ws_price = wb['价目表0601']
-            for row in ws_price.iter_rows(min_row=2, values_only=True):
-                code = row[2]  # C列=项目编号（物料编码）
-                price = row[9]  # J列=值（价格）
-                if code and price:
-                    code_prices[str(code).strip()] = float(price)
+        # Try '价目表0701','价目表0601' etc
+        for sn in wb.sheetnames:
+            if '价目表' in sn and '名称' not in sn:
+                ws_price = wb[sn]
+                for row in ws_price.iter_rows(min_row=2, values_only=True):
+                    code = row[2]  # C列=项目编号（物料编码）
+                    price = row[9]  # J列=值（价格）
+                    if code and price:
+                        code_prices[str(code).strip()] = float(price)
+                break  # Only use first matching sheet
         CODE_PRICE_MAP = code_prices
         
         wb.close()
@@ -248,6 +257,66 @@ def parse_domestic_from_attachment(attachment_path):
     """从邮件附件Excel提取国内订单（进口产品统计表）"""
     print(f"  解析国内订单附件: {os.path.basename(attachment_path)}")
     today_int = int(TODAY)
+    
+    # .xls files: use xlrd, build items with SAME structure as openpyxl path
+    if attachment_path.endswith('.xls'):
+        try:
+            import xlrd
+            xl_wb = xlrd.open_workbook(attachment_path)
+            all_items = []
+            for sn in xl_wb.sheet_names():
+                ws = xl_wb.sheet_by_name(sn)
+                if ws.nrows < 2:
+                    continue
+                # Find column indices from header
+                headers = [str(ws.cell_value(0, c)).strip() for c in range(ws.ncols)]
+                def find_col(*keywords):
+                    for c, h in enumerate(headers):
+                        for kw in keywords:
+                            if kw in h: return c
+                    return -1
+                col_model = find_col('型号')
+                col_qty = find_col('数量')
+                col_price = find_col('报关单价')
+                col_supplier = find_col('供应商')
+                col_date = find_col('下单日期', '进口日期')
+                if col_model < 0 or col_qty < 0:
+                    continue
+                for row in range(1, ws.nrows):
+                    if col_date >= 0:
+                        row_date = ws.cell_value(row, col_date)
+                        try:
+                            if int(row_date) != today_int:
+                                continue
+                        except:
+                            continue
+                    model = str(ws.cell_value(row, col_model)).strip().upper()
+                    qty = ws.cell_value(row, col_qty)
+                    if not model or not qty:
+                        continue
+                    price = ws.cell_value(row, col_price) if col_price >= 0 else None
+                    supplier = str(ws.cell_value(row, col_supplier)).strip() if col_supplier >= 0 else ''
+                    # Build item with EXACT same fields as the openpyxl path below
+                    item = {
+                        "model": model,
+                        "qty": int(qty) if qty else 0,
+                        "price": float(price) if price else get_model_price(model, None),
+                        "supplier": supplier,
+                        "material_code": "",
+                        "tax_agent": "",
+                        "po": "",
+                        "so": "",
+                        "date": str(int(row_date)) if 'row_date' in dir() else TODAY,
+                    }
+                    # Fill material code from mapping
+                    item["material_code"] = get_model_code(item["model"]) or ""
+                    all_items.append(item)
+                    print(f"    {sn}: {item['model']} {item['qty']} PCS @ {item['price']} USD, 供应商={item['supplier']}")
+            return all_items
+        except Exception as e:
+            print(f"   xlrd读取失败: {e}")
+            return []
+    
     try:
         wb = load_workbook(attachment_path, data_only=True)
     except Exception as e:
@@ -299,7 +368,7 @@ def parse_domestic_from_attachment(attachment_path):
                 if ta:
                     tax_agent_from_att = str(ta).strip()
             if not tax_agent_from_att:
-                tax_agent_from_att = "世纪通"  # fallback
+                tax_agent_from_att = ""
 
             item = {
                 "model": str(model).upper().strip(),
@@ -339,21 +408,99 @@ def parse_domestic_from_attachment(attachment_path):
     wb.close()
     return all_items
 
-def parse_qianhai_from_email(body, subject):
+def _parse_domestic_xlrd(attachment_path):
+    """xlr fallback for .xls - returns items IDENTICAL to openpyxl path"""
+    import xlrd
+    today_int = int(TODAY)
+    wb = xlrd.open_workbook(attachment_path)
+    all_items = []
+    for sn in wb.sheet_names():
+        ws = wb.sheet_by_name(sn)
+        if ws.nrows < 2:
+            continue
+        # Find column indices from header row
+        headers = [str(ws.cell_value(0, c)).strip() for c in range(ws.ncols)]
+        def find_col(*keywords):
+            for c, h in enumerate(headers):
+                for kw in keywords:
+                    if kw in h:
+                        return c
+            return -1
+        col_model = find_col('型号')
+        col_qty = find_col('数量')
+        col_price = find_col('报关单价')
+        col_supplier = find_col('供应商')
+        col_date = find_col('下单日期', '进口日期')
+        col_po = find_col('PO')
+        if col_model < 0 or col_qty < 0:
+            continue
+        for r in range(1, ws.nrows):
+            # Skip rows that already have a PO number (historical data)
+            if col_po >= 0:
+                po_val = str(ws.cell_value(r, col_po)).strip()
+                if po_val and po_val.upper().startswith('SZK'):
+                    continue
+            if col_date >= 0:
+                row_date = ws.cell_value(r, col_date)
+                try:
+                    d = int(row_date)
+                    if d != today_int:
+                        continue
+                except:
+                    continue
+            model = str(ws.cell_value(r, col_model)).strip()
+            qty = ws.cell_value(r, col_qty)
+            if not model or not qty:
+                continue
+            model = model.upper()
+            price = ws.cell_value(r, col_price) if col_price >= 0 else None
+            supplier = str(ws.cell_value(r, col_supplier)).strip() if col_supplier >= 0 else ''
+            item = {
+                "model": model,
+                "qty": int(qty) if qty else 0,
+                "price": float(price) if price else get_model_price(model, None),
+                "supplier": supplier,
+                "material_code": '',
+                "tax_agent": "",
+                "po": '',
+                "so": '',
+                "date": str(int(d)) if 'd' in dir() else TODAY,
+            }
+            item["material_code"] = get_model_code(model) or ''
+            all_items.append(item)
+            print(f"    {sn}: {item['model']} {item['qty']} PCS @ {item['price']} USD, 供应商={item['supplier']}")
+    return all_items
+
+def parse_qianhai_from_email(body, subject, attachments=None):
     """从邮件正文解析前海保税区结转订单（区间结转），归入海外类"""
     print(f"  解析前海区间结转邮件: {subject}")
     
-    # 从邮件标题提取供应商/测试厂
+    # 供应商识别优先级：标题 > 附件文件名 > 正文
     supplier = ""
-    for kw in ["NJVT", "XJ", "SPILSZ", "ASECL", "ASE", "HN"]:
-        if kw in subject or kw in body:
+    all_kw = ["NJVT", "XJ", "SPILSZ", "ASECL", "ASE", "HN"]
+    # 1. 标题
+    for kw in all_kw:
+        if kw in subject:
             supplier = kw
             break
+    # 2. 附件文件名
+    if not supplier and attachments:
+        for att in attachments:
+            att_name = os.path.basename(att).upper()
+            for kw in all_kw:
+                if kw in att_name:
+                    supplier = kw
+                    break
+            if supplier:
+                break
+    # 3. 正文（同时检查"海纳"映射到HN）
     if not supplier:
-        # 从正文提取
-        for kw in ["NJVT", "XJ", "SPILSZ", "ASECL", "ASE", "HN"]:
+        for kw in all_kw + ["海纳"]:
             if kw in body:
-                supplier = kw
+                if kw == "海纳":
+                    supplier = "HN"
+                else:
+                    supplier = kw
                 break
     
     items = []
@@ -387,18 +534,18 @@ def parse_qianhai_from_email(body, subject):
     
     return items
 
-def parse_overseas_from_email(body, subject):
-    """从邮件正文解析海外订单"""
+def parse_overseas_from_email(body, subject, attachments=None):
+    """从邮件正文或附件解析海外订单"""
     print(f"  解析海外订单邮件: {subject}")
 
     items = []
-    # 模式: BMxxxxXX 数量
+    seen = {}
+    
+    # 1. 从正文提取 BM 型号+数量
     patterns = [
         r'(BM\d{4}[A-Z]{0,3}[\+\w]*)\s*[:\s]\s*(\d+)\s*(?:pcs|PCS|个|片)?',
         r'(BM\d{4}[A-Z]{0,3}[\+\w]*)\s+(\d{3,})',
     ]
-
-    seen = {}
     for pat in patterns:
         for m in re.findall(pat, body, re.IGNORECASE):
             model = m[0].upper().strip()
@@ -414,17 +561,79 @@ def parse_overseas_from_email(body, subject):
         destination = "泰国ONETEC"
     elif "新加坡" in body:
         destination = "新加坡比特"
+    elif "墨西哥" in body or "墨西哥" in subject:
+        destination = "墨西哥欧陆通"
     elif "泰国" in body:
         destination = "泰国"
 
-    # 解析供应商
+    # 解析供应商 - 优先标题，其次附件文件名，最后正文
     supplier = ""
-    if "XJ" in body or "信佳" in body:
-        supplier = "XJ"
-    elif "NJVT" in body or "南京" in body:
-        supplier = "NJVT"
-    elif "SPILSZ" in body:
-        supplier = "SPILSZ"
+    # 1. 标题
+    for kw in ["XJ", "NJVT", "SPILSZ", "ASECL", "ASE", "HN"]:
+        if kw in subject:
+            supplier = kw
+            break
+    # 2. 附件文件名
+    if not supplier and attachments:
+        for att in attachments:
+            att_name = os.path.basename(att).upper()
+            for kw in ["XJ", "NJVT", "SPILSZ", "ASECL", "ASE", "HN"]:
+                if kw in att_name:
+                    supplier = kw
+                    break
+            if supplier:
+                break
+    # 3. 正文
+    if not supplier:
+        for kw in ["XJ", "信佳", "NJVT", "南京", "SPILSZ", "HN", "海纳"]:
+            if kw in body:
+                if kw == "信佳":
+                    supplier = "XJ"
+                elif kw == "南京":
+                    supplier = "NJVT"
+                elif kw == "海纳":
+                    supplier = "HN"
+                else:
+                    supplier = kw
+                break
+    
+    # 4. 如果正文没有型号数据，从附件提取
+    if not seen and attachments:
+        print(f"    正文无型号数据，尝试从附件提取...")
+        for att in attachments:
+            if not att.endswith(('.xlsx', '.xls')):
+                continue
+            try:
+                att_wb = load_workbook(att, data_only=True)
+                for sn in att_wb.sheetnames:
+                    if '发票' not in sn and '箱单' not in sn:
+                        continue
+                    ws = att_wb[sn]
+                    for r in range(1, ws.max_row + 1):
+                        for c in range(1, min(ws.max_column + 1, 12)):
+                            val = str(ws.cell(row=r, column=c).value or '')
+                            bm = re.search(r'(BM\d{4}[A-Z]{0,3})', val)
+                            if bm:
+                                model = bm.group(1).upper().strip()
+                                # 找同一行的数量
+                                for c2 in range(c + 1, min(ws.max_column + 1, c + 6)):
+                                    qty_val = ws.cell(row=r, column=c2).value
+                                    if qty_val and isinstance(qty_val, (int, float)) and qty_val > 100:
+                                        # 确认是数量（不是价格）
+                                        if model not in seen or int(qty_val) > seen[model]:
+                                            seen[model] = int(qty_val)
+                            # Also try TOTAL row
+                            if 'TOTAL' in val.upper() and not seen:
+                                for c3 in range(1, c):
+                                    prev = str(ws.cell(row=r-2, column=c3).value or '')
+                                    if not seen:
+                                        # Look at rows above for model
+                                        pass
+                att_wb.close()
+                if seen:
+                    break
+            except Exception as e:
+                print(f"    附件解析失败: {e}")
 
     for model, qty in seen.items():
         code = get_model_code(model)
@@ -511,11 +720,24 @@ def fetch_and_parse_orders():
 
         # 有附件且主题含"进口产品统计表" → 国内订单
         is_domestic = attachments and ("进口产品统计表" in subject)
-        # 主题含"进口产品统计表"但无附件 → 跳过（附件已在其他邮件中）
+        # 主题含"进口产品统计表"但无附件 → 跳过
         is_domestic_no_att = (not attachments) and ("进口产品统计表" in subject)
-        # 主题含海外关键词且无国内标识 → 海外订单
-        overseas_keywords = ["出口", "出货通知", "海外", "DPT"]
-        is_overseas = any(kw in subject for kw in overseas_keywords) and not is_domestic
+        # 进口报关资料审核邮件 → 跳过（不产生订单，只是关税付款通知）
+        if "进口报关资料审核" in subject:
+            print(f"    跳过进口报关资料审核邮件")
+            continue
+        # 前海保税区结转 → 单独的解析路径（不识别为海外或国内）
+        is_qianhai = "区间结转" in subject or "前海" in subject
+        # 送货预约邮件 → 跳过（只是物流通知，不是订单）
+        if "送货预约" in subject:
+            print(f"    跳过送货预约邮件")
+            continue
+        overseas_keywords = ["出口", "出货通知", "海外", "DPT", "清关资料", "墨西哥"]
+        is_overseas = any(kw in subject for kw in overseas_keywords) and not is_domestic and not is_qianhai
+        # 有出口相关附件但没命中海外关键字 → 也尝试解析
+        has_overseas_attachment = attachments and any(
+            kw in att for att in attachments for kw in ["出口", "墨西哥", "ONETEC", "群光"]
+        )
 
         # 国内订单：从附件解析
         if is_domestic:
@@ -535,16 +757,27 @@ def fetch_and_parse_orders():
             print(f"    主题含'进口产品统计表'但无附件，跳过")
             continue
 
-        # 前海保税区结转 → 区间结转邮件（归入海外类）
-        if "区间结转" in subject or "前海" in subject:
-            items = parse_qianhai_from_email(body, subject)
+        # 前海保税区结转 → 区间结转邮件，按邮件DATE过滤日期避免跨天重复
+        if is_qianhai:
+            # 提取邮件日期，只处理当天的前海邮件
+            em_date_str = em.get("date", "")
+            # 尝试从邮件Date头提取日期
+            from email.utils import parsedate_to_datetime as pdt
+            try:
+                em_dt = pdt(em_date_str).date()
+                if em_dt != TODAY_DATE:
+                    print(f"    前海邮件日期={em_dt}≠今天={TODAY_DATE}，跳过")
+                    continue
+            except:
+                pass  # 无法解析日期则继续处理
+            items = parse_qianhai_from_email(body, subject, attachments)
             if items:
                 overseas_items.extend(items)
             continue
 
-        # 海外订单：从正文解析
-        if is_overseas or (not is_domestic and not attachments):
-            items = parse_overseas_from_email(body, subject)
+        # 海外订单：从正文解析 OR 有墨西哥/出口附件
+        if is_overseas or has_overseas_attachment or (not is_domestic and not is_qianhai and not attachments):
+            items = parse_overseas_from_email(body, subject, attachments)
             if items:
                 overseas_items.extend(items)
 
@@ -652,10 +885,20 @@ def add_multiple_ss(ss_xml, strings_to_add):
     return result_map, ss_xml
 
 # ==================== 1. 生成WebADI xlsm ====================
-def generate_xlsm():
-    print("=== 生成WebADI xlsm ===")
+def generate_xlsm(items=None, output_name=None, is_qianhai=False):
+    """生成WebADI xlsm。
+    items: 订单列表，默认=DOMESTIC_MERGED + OVERSEAS_ITEMS
+    output_name: 输出文件名，默认=采购订单_{TODAY}.xlsm
+    is_qianhai: 前海保税区模式，全部用SZK实体
+    """
+    if items is None:
+        items = list(DOMESTIC_MERGED) + list(OVERSEAS_ITEMS)
+    if output_name is None:
+        output_name = f"采购订单_{TODAY}.xlsm"
+    
+    print(f"=== 生成WebADI xlsm: {output_name} ===")
     template_path = os.path.join(WORKSPACE, "data/templates/webadi_template.xlsm")
-    output_path = os.path.join(WORKSPACE, f"data/output/采购订单_{TODAY}.xlsm")
+    output_path = os.path.join(WORKSPACE, f"data/output/{output_name}")
     
     z = zipfile.ZipFile(template_path, 'r')
     sheet2_raw = z.read('xl/worksheets/sheet2.xml').decode('utf-8')
@@ -679,34 +922,30 @@ def generate_xlsm():
     
     # Strings to add to sharedStrings
     new_strings = []
-    for item in DOMESTIC_ITEMS:
+    for item in items:
         new_strings.extend([item['po'], item['material_code'], item['model']])
-    for item in OVERSEAS_ITEMS:
-        new_strings.extend([item['po'], item['material_code'], item['model']])
-    # Add model description strings
-    for item in DOMESTIC_ITEMS:
+    for item in items:
         new_strings.append(f"{item['model']}芯片")
-    for item in OVERSEAS_ITEMS:
-        new_strings.append(f"{item['model']}芯片")
-    # DPT海外专用字符串
-    new_strings.extend([
-        'DPT',                        # 业务实体(海外)
-        'CHANHUA PTE. LTD.',          # 供应商(海外)
-        '费用',                       # 供应商地点(海外)
-        '1155.BITMAIN DEVELOPMENT PTE. LTD.',  # 收货方(海外)
-    ])
-    # 海外目的子库存 - 根据收货地址
-    for item in OVERSEAS_ITEMS:
-        dest_subinv_map = {
-            '泰国群光': 'DPTHQGCP',
-            '泰国ONETEC': 'DPTONETYCL',
-            'PIE': 'DPTPIECL',
-            '前海保税区': 'DPTQHBSC',
-            '墨西哥欧陆通': 'DPTMOLTYCL',
-        }
-        dest_subinv = dest_subinv_map.get(item.get('destination', ''), 'DPTHQGCP')
-        new_strings.append(dest_subinv)
-        item['dest_subinv'] = dest_subinv
+    # DPT海外专用字符串（前海模式不需要）
+    if not is_qianhai:
+        new_strings.extend([
+            'DPT',
+            'CHANHUA PTE. LTD.',
+            '费用',
+            '1155.BITMAIN DEVELOPMENT PTE. LTD.',
+        ])
+        # 海外目的子库存
+        for item in OVERSEAS_ITEMS:
+            dest_subinv_map = {
+                '泰国群光': 'DPTHQGCP',
+                '泰国ONETEC': 'DPTONETYCL',
+                'PIE': 'DPTPIECL',
+                '前海保税区': 'DPTQHBSC',
+                '墨西哥欧陆通': 'DPTMOLTYCL',
+            }
+            dest_subinv = dest_subinv_map.get(item.get('destination', ''), 'DPTHQGCP')
+            new_strings.append(dest_subinv)
+            item['dest_subinv'] = dest_subinv
     
     new_strings = list(set(new_strings))  # deduplicate
     
@@ -721,8 +960,8 @@ def generate_xlsm():
     def make_xlsm_row(row_num, item, is_domestic=True):
         row = f'<row r="{row_num}" spans="2:39" ht="14.25" outlineLevel="1">'
         
-        if is_domestic:
-            # 国内SZK订单
+        if is_domestic or is_qianhai:
+            # 国内SZK订单（含前海保税区）
             entity_idx = ss_map["SZK"]
             supplier_idx = ss_map["BITMAIN"]
             supplier_loc_idx = ss_map["SG"]
@@ -814,10 +1053,9 @@ def generate_xlsm():
         row += '</row>'
         return row
     
-    # Build ALL rows from row 10 to template_max_row
-    # - Rows 1-9: kept from template (header area)
-    # - Rows 10+: regenerated — data rows + clean empty padding (no shifting of stale template rows)
-    all_items = list(DOMESTIC_MERGED) + list(OVERSEAS_ITEMS)
+    # Build ALL rows
+    all_items = items
+    domestic_count = len(DOMESTIC_MERGED) if not is_qianhai else len(items)
     
     # Figure out how many rows the template has
     template_max = 1005
@@ -830,7 +1068,7 @@ def generate_xlsm():
         rn = 10 + i
         if i < len(all_items):
             item = all_items[i]
-            is_dom = i < len(DOMESTIC_MERGED)
+            is_dom = i < domestic_count
             new_rows.append(make_xlsm_row(rn, item, is_domestic=is_dom))
         else:
             # Clean empty padding row — styles only, NO shared string content
@@ -894,14 +1132,24 @@ def generate_xlsm():
     return output_path
 
 # ==================== 2. 生成采购订单数据xlsx ====================
-def generate_summary_xlsx():
+def generate_summary_xlsx(items=None, output_name=None):
+    """生成采购订单数据xlsx
+    items: 订单列表，默认=DOMESTIC_MERGED + OVERSEAS_ITEMS
+    output_name: 输出文件名
+    """
+    if items is None:
+        items = list(DOMESTIC_MERGED) + list(OVERSEAS_ITEMS)
+    
     print("=== 生成采购订单数据xlsx ===")
     import openpyxl
     from openpyxl.styles import Font, Alignment, Border, Side
     
-    # 用第一个国内PO号命名，没有则用TODAY
-    first_po = DOMESTIC_ITEMS[0]['po'] if DOMESTIC_ITEMS else f"PO_{TODAY}"
-    output_path = os.path.join(WORKSPACE, f"data/output/{first_po}.xlsx")
+    # 用第一个PO号命名，没有则用TODAY
+    if output_name:
+        output_path = os.path.join(WORKSPACE, f"data/output/{output_name}")
+    else:
+        first_po = DOMESTIC_ITEMS[0]['po'] if DOMESTIC_ITEMS else f"PO_{TODAY}"
+        output_path = os.path.join(WORKSPACE, f"data/output/{first_po}.xlsx")
     
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -916,30 +1164,32 @@ def generate_summary_xlsx():
     
     ws.append(headers)
     
-    all_items = []
-    domestic_data = [
-        ('Y', 'SZK', '标准采购订单', item['po'], 'USD', '何宇川,', 'BITMAIN DEVELOPMENT PTE.  LTD.',
-         'SG', 'XAP', '1004.Bitmain Shenzhen', 'SZKXYCL', '1004.Bitmain Shenzhen',
-         '付款方式一', '生产用料销售', '', 'Y', '', '手工录入', '', i+1, 'BM系列',
-         item['material_code'], f"{item['model']}芯片", '个', item['qty'],
-         TODAY_DATE, TODAY_DATE, TODAY_DATE, item['price'], item['price'], '0', 'ANTMINER')
-        for i, item in enumerate(DOMESTIC_MERGED)
-    ]
+    # 判断是否前海保税区（全部用SZK实体）
+    is_qianhai = output_name and '前海' in output_name
     
-    dest_subinv_map = {
-        '泰国群光': 'DPTHQGCP', '泰国ONETEC': 'DPTONETYCL', 'PIE': 'DPTPIECL',
-        '前海保税区': 'DPTQHBSC', '墨西哥欧陆通': 'DPTMOLTYCL',
-    }
-    overseas_data = [
-        ('Y', 'DPT', '标准采购订单', item['po'], 'USD', '何宇川,', 'CHANHUA PTE. LTD.',
-         '费用', 'XAP', '1155.BITMAIN DEVELOPMENT PTE. LTD.', dest_subinv_map.get(item.get('destination',''), 'DPTHQGCP'), '1155.BITMAIN DEVELOPMENT PTE. LTD.',
-         '付款方式一', '生产用料销售', '', 'Y', '', '手工录入', '', 1, 'BM系列',
-         item['material_code'], f"{item['model']}芯片", '个', item['qty'],
-         TODAY_DATE, TODAY_DATE, TODAY_DATE, item['price'], item['price'], '0', 'ANTMINER')
-        for item in OVERSEAS_ITEMS
-    ]
+    all_rows = []
+    for i, item in enumerate(items):
+        if is_qianhai or item in DOMESTIC_MERGED:
+            # 国内SZK格式（含前海保税区）
+            row_data = ('Y', 'SZK', '标准采购订单', item['po'], 'USD', '何宇川,', 'BITMAIN DEVELOPMENT PTE.  LTD.',
+                       'SG', 'XAP', '1004.Bitmain Shenzhen', 'SZKXYCL', '1004.Bitmain Shenzhen',
+                       '付款方式一', '生产用料销售', '', 'Y', '', '手工录入', '', i+1, 'BM系列',
+                       item['material_code'], f"{item['model']}芯片", '个', item['qty'],
+                       TODAY_DATE, TODAY_DATE, TODAY_DATE, item['price'], item['price'], '0', 'ANTMINER')
+        else:
+            # 海外DPT格式
+            dest_subinv_map = {
+                '泰国群光': 'DPTHQGCP', '泰国ONETEC': 'DPTONETYCL', 'PIE': 'DPTPIECL',
+                '前海保税区': 'DPTQHBSC', '墨西哥欧陆通': 'DPTMOLTYCL',
+            }
+            dest_subinv = dest_subinv_map.get(item.get('destination',''), 'DPTHQGCP')
+            row_data = ('Y', 'DPT', '标准采购订单', item['po'], 'USD', '何宇川,', 'CHANHUA PTE. LTD.',
+                       '费用', 'XAP', '1155.BITMAIN DEVELOPMENT PTE. LTD.', dest_subinv, '1155.BITMAIN DEVELOPMENT PTE. LTD.',
+                       '付款方式一', '生产用料销售', '', 'Y', '', '手工录入', '', 1, 'BM系列',
+                       item['material_code'], f"{item['model']}芯片", '个', item['qty'],
+                       TODAY_DATE, TODAY_DATE, TODAY_DATE, item['price'], item['price'], '0', 'ANTMINER')
+        all_rows.append(row_data)
     
-    all_rows = domestic_data + overseas_data
     for row_data in all_rows:
         ws.append(row_data)
     
@@ -1140,7 +1390,8 @@ def update_domestic_statistics():
     new_items = [item for item in OVERSEAS_ITEMS if item['po'] not in existing_po]
     skipped = len(OVERSEAS_ITEMS) - len(new_items)
     if skipped > 0:
-        print(f"  去重: 跳过 {skipped} 条已存在的记录 (PO号: {[item['po'] for item in OVERSEAS_ITEMS if item not in new_items]})")
+        skipped_pos = [item['po'] for item in OVERSEAS_ITEMS if item not in new_items]
+        print(f"  去重: 跳过 {skipped} 条已存在的记录 (PO号: {skipped_pos})")
     
     if not new_items:
         print("  无新增数据，不追加行")
@@ -1336,6 +1587,88 @@ def send_domestic_report():
     
     print(f"  报告发送成功!")
 
+def send_qianhai_report():
+    """发送前海保税区采购订单邮件，HTML表格格式，跟国内一样"""
+    # 从海外订单中筛选前海保税区
+    qianhai_items = [item for item in OVERSEAS_ITEMS if item.get('destination') == '前海保税区']
+    if not qianhai_items:
+        return
+    
+    print(f"=== 发送前海保税区报告 ===")
+    
+    msg = MIMEMultipart('alternative')
+    msg['From'] = formataddr(("采购PO自动化", EMAIL_ACCOUNT))
+    msg['To'] = ", ".join(QIANHAI_TO)
+    msg['Cc'] = ", ".join(QIANHAI_CC)
+    msg['Date'] = email_lib.utils.formatdate(localtime=True)
+    msg['Subject'] = Header(f"前海保税区采购订单_{TODAY}", 'utf-8')
+    
+    html = f"""\
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+<p>您好，</p>
+<p>以下为{TODAY}前海保税区采购订单：</p>
+<table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse; font-size:12px; font-family:Arial, sans-serif;">
+  <tr style="background-color:#4472C4; color:#ffffff; text-align:center;">
+    <th>序号</th>
+    <th>采购主体</th>
+    <th>出货日期</th>
+    <th>销售主体</th>
+    <th>协议</th>
+    <th>供应商</th>
+    <th>型号</th>
+    <th>数量</th>
+    <th>单位</th>
+    <th>物料编码</th>
+    <th>PO号</th>
+  </tr>
+"""
+    for i, item in enumerate(qianhai_items):
+        seq = str(i + 1)
+        entity = "深圳世纪云芯"
+        date = item.get('date', TODAY)
+        dest = "前海保税区"
+        agreement = "区间结转"
+        supplier = item.get('supplier', '')
+        model = item['model']
+        qty = str(item['qty'])
+        unit = "PCS"
+        code = item.get('material_code', '')
+        po = item['po']
+        html += f"""\
+  <tr style="text-align:center;">
+    <td>{seq}</td>
+    <td>{entity}</td>
+    <td>{date}</td>
+    <td>{dest}</td>
+    <td>{agreement}</td>
+    <td>{supplier}</td>
+    <td>{model}</td>
+    <td style="text-align:right;">{qty}</td>
+    <td>{unit}</td>
+    <td>{code}</td>
+    <td>{po}</td>
+  </tr>
+"""
+    html += """\
+</table>
+<br/>
+<p>谢谢！</p>
+</body>
+</html>"""
+    
+    msg.attach(MIMEText(html, 'html', 'utf-8'))
+    
+    all_recipients = QIANHAI_TO + QIANHAI_CC
+    server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+    server.starttls()
+    server.login(EMAIL_ACCOUNT, EMAIL_PASSWORD)
+    server.sendmail(EMAIL_ACCOUNT, all_recipients, msg.as_string())
+    server.quit()
+    
+    print(f"  前海报告发送成功! (收件人: {len(QIANHAI_TO)}人, 抄送: {len(QIANHAI_CC)}人)")
+
 # ==================== 主流程 ====================
 if __name__ == "__main__":
     print(f"采购订单自动化 - {TODAY}")
@@ -1355,6 +1688,7 @@ if __name__ == "__main__":
     if xlsm_path and summary_path and intl_path and overseas_path:
         send_email(xlsm_path, summary_path, intl_path, overseas_path)
         send_domestic_report()
+        send_qianhai_report()
         
         # 保存累计文件供第二天使用
         shutil.copy2(intl_path, os.path.join(WORKSPACE, "data/output/国内进口产品统计表.xlsx"))
