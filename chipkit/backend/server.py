@@ -482,13 +482,18 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         where = "WHERE i.device = ?" if device else ""
         params = [device] if device else []
         sql = f"""
-        SELECT i.*, m.model1, m.model2, m.model3, u.usage_qty,
-               CASE WHEN u.usage_qty > 0 THEN i.qty / u.usage_qty ELSE 0 END as machine_count
+        SELECT i.device, i.device_prog_bin, i.bin, i.test_program,
+               i.warehouse_name, i.warehouse_type,
+               SUM(i.qty) as total_qty,
+               m.model1, m.model2, m.model3,
+               u.usage_qty,
+               CASE WHEN u.usage_qty > 0 THEN SUM(i.qty) / u.usage_qty ELSE 0 END as machine_count
         FROM inventory i
         LEFT JOIN model_mapping m ON i.device_prog_bin = m.device_prog_bin
         LEFT JOIN usage_mapping u ON i.device = u.device AND m.model1 = u.model_name
         {where}
-        ORDER BY i.device, i.warehouse_type, i.qty DESC
+        GROUP BY i.device, i.device_prog_bin, i.warehouse_name, i.warehouse_type
+        ORDER BY i.device, total_qty DESC
         LIMIT 500
         """
         rows = raw(sql, tuple(params))
