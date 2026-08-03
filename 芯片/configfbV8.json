@@ -4,7 +4,7 @@
     "password": "-DxpOD5kkN)(RuPgAK-p",
     "imap_server": "imap.appia.vip",
     "root_folder": "INBOX/系统邮件",
-    "search_criteria": "SINCE \"17-Jun-2026\" BEFORE \"18-Jun-2026\"",
+    "search_criteria": "SINCE \"03-Aug-2026\" BEFORE \"04-Aug-2026\"",
     "recursive_folders": true,
     "exclude_folders": [
       "垃圾邮件",
@@ -23,12 +23,10 @@
     "subject": "shippinglist汇总",
     "body": "您好，附件是最新自动处理完成的最近shippinglist汇总报表。",
     "to_recipients": [
-      "fubing.zuo@casue.com",
-      "yujia.cheng@casue.com",
       "haixia.lu@casue.com",
       "pc_group@casue.com",
-      "xinyan.song@casue.com",
-      "xiaofan.yang@casue.com"
+      "xiaofan.yang@casue.com",
+      "yiping.xu@casue.com"
     ],
     "cc_recipients": []
   },
@@ -526,7 +524,135 @@
     },
     {
       "attach_rule": {
-        "match_key": "-SHIPMENT",
+        "match_key": "SHIP_2026-",
+        "suffix": ".xlsx",
+        "sheet": "2026BTM",
+        "header_row": 2,
+        "cols_range": [
+          "B-H",
+          "K-M",
+          "O",
+          "W"
+        ]
+      },
+      "local_rule": {
+        "sheet": "出货明细表",
+        "header_row": 2,
+        "cols_range": [
+          "B-M"
+        ],
+        "write_mode": "append2",
+        "unique_key_cols": [
+          "B-M"
+        ],
+        "deduplicate": true,
+        "force_formula_cols": [
+          "N",
+          "O",
+          "P",
+          "Q",
+          "R",
+          "T",
+          "U",
+          "V",
+          "W",
+          "X",
+          "Y",
+          "Z",
+          "AA",
+          "AB",
+          "AC",
+          "AD",
+          "AE",
+          "AF",
+          "AG",
+          "AH",
+          "AI"
+        ]
+      },
+      "data_process_rules": [
+        {
+          "type": "slice_combine",
+          "col": "B",
+          "slice_rule": "[0:10]",
+          "combine_str": ""
+        },
+        {
+          "type": "replace_str",
+          "col": "B",
+          "old_str": "/",
+          "new_str": "-"
+        }
+      ]
+    },
+    {
+      "attach_rule": {
+        "match_key": "SHIP_2026-",
+        "suffix": ".xlsx",
+        "sheet": "2026BTM",
+        "header_row": 2,
+        "cols_range": [
+          "B-E",
+          "I",
+          "G-H",
+          "K-M",
+          "O",
+          "W"
+        ]
+      },
+      "local_rule": {
+        "sheet": "出货明细表",
+        "header_row": 2,
+        "cols_range": [
+          "B-M"
+        ],
+        "write_mode": "append2",
+        "unique_key_cols": [
+          "B-M"
+        ],
+        "deduplicate": true,
+        "force_formula_cols": [
+          "N",
+          "O",
+          "P",
+          "Q",
+          "R",
+          "T",
+          "U",
+          "V",
+          "W",
+          "X",
+          "Y",
+          "Z",
+          "AA",
+          "AB",
+          "AC",
+          "AD",
+          "AE",
+          "AF",
+          "AG",
+          "AH",
+          "AI"
+        ]
+      },
+      "data_process_rules": [
+        {
+          "type": "slice_combine",
+          "col": "B",
+          "slice_rule": "[0:10]",
+          "combine_str": ""
+        },
+        {
+          "type": "replace_str",
+          "col": "B",
+          "old_str": "/",
+          "new_str": "-"
+        }
+      ]
+    },
+    {
+      "attach_rule": {
+        "match_key": "SHIPMENT.",
         "suffix": ".xlsx",
         "sheet": "chanhua",
         "header_row": 1,

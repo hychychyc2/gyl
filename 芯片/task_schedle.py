@@ -6,6 +6,7 @@ from datetime import datetime,timedelta
 
 # ===================== 配置项（请根据你的实际情况修改）=====================
 CONFIG_FILE_PATH = r"D:\供应链\芯片\configchV8.json"  # 你的配置文件路径
+CONFIG_FILE_PATH=sys.argv[1]
 MAIN_PY_FILE_PATH = r"D:\供应链\芯片\V8.py"  # 你的主Python文件路径
 DATE_FIELD_PATH = "email_config.search_criteria"  # 配置文件中要修改的时间字段路径（按需调整）
 PYTHON_EXECUTABLE = sys.executable  # Python解释器路径（默认用当前环境的Python）

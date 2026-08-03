@@ -6,6 +6,8 @@ from datetime import datetime,timedelta
 
 # ===================== 配置项（请根据你的实际情况修改）=====================
 CONFIG_FILE_PATH = r"D:\供应链\芯片\configkcV8.json"  # 你的配置文件路径
+CONFIG_FILE_PATH=sys.argv[1]
+
 MAIN_PY_FILE_PATH = r"D:\供应链\芯片\V8.py"  # 你的主Python文件路径
 DATE_FIELD_PATH = "email_config.search_criteria"  # 配置文件中要修改的时间字段路径（按需调整）
 PYTHON_EXECUTABLE = sys.executable  # Python解释器路径（默认用当前环境的Python）
@@ -50,7 +52,7 @@ def update_config_date(config_path: str, date_field_path: str) -> bool:
         print(f"❌ 修改配置文件失败：{str(e)}")
         return False
 
-def run_main_python_file(py_file_path: str) -> bool:
+def run_main_python_file(py_file_path: str,config_path:str) -> bool:
     """执行主Python文件（彻底解决编码/类型错误）"""
     try:
         if not os.path.exists(py_file_path):
@@ -58,7 +60,7 @@ def run_main_python_file(py_file_path: str) -> bool:
         
         # 执行主程序（用当前Python环境）
         result = subprocess.run(
-            [PYTHON_EXECUTABLE, py_file_path],
+            [PYTHON_EXECUTABLE, py_file_path,config_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             # 关键：不指定encoding，强制返回字节流；同时忽略执行中的编码错误
@@ -105,7 +107,7 @@ if __name__ == "__main__":
         sys.exit(1)
     
     # 第二步：执行主程序
-    if not run_main_python_file(MAIN_PY_FILE_PATH):
+    if not run_main_python_file(MAIN_PY_FILE_PATH,CONFIG_FILE_PATH):
         sys.exit(1)
     
     print(f"========== 定时任务执行完成（{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}）==========")

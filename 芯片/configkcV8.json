@@ -4,7 +4,7 @@
     "password": "-DxpOD5kkN)(RuPgAK-p",
     "imap_server": "imap.appia.vip",
     "root_folder": "INBOX/系统邮件",
-    "search_criteria": "SINCE \"16-Jun-2026\" BEFORE \"17-Jun-2026\"",
+    "search_criteria": "SINCE \"27-Jul-2026\" BEFORE \"28-Jul-2026\"",
     "recursive_folders": true,
     "exclude_folders": [
       "垃圾邮件",
@@ -210,7 +210,7 @@
       "attach_rule": {
         "match_key": "月交付计划",
         "suffix": ".xlsx",
-        "sheet": "PASS库存",
+        "sheet": "pass库存",
         "header_row": 1,
         "cols_range": [
           "产品型号",
@@ -258,7 +258,7 @@
       "attach_rule": {
         "match_key": "月交付计划",
         "suffix": ".xlsx",
-        "sheet": "hold库存",
+        "sheet": "Hold库存",
         "header_row": 1,
         "cols_range": [
           "产品型号",

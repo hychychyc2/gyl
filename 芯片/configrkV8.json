@@ -4,7 +4,7 @@
     "password": "-DxpOD5kkN)(RuPgAK-p",
     "imap_server": "imap.appia.vip",
     "root_folder": "INBOX/系统邮件",
-    "search_criteria": "SINCE \"09-Jun-2026\" BEFORE \"10-Jun-2026\"",
+    "search_criteria": "SINCE \"28-Jul-2026\" BEFORE \"29-Jul-2026\"",
     "recursive_folders": true,
     "exclude_folders": [
       "垃圾邮件",

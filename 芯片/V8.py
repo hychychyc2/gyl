@@ -19,8 +19,464 @@ def safe_print(*args, **kwargs):
     except:
         # 极端情况直接静默输出
         pass
+def remove_all_array_formulas_from_workbook(wb):
+    """
+    【暴力根治】遍历工作簿中所有Sheet，强制清除所有单元格的 array_formula 属性
+    防止 openpyxl 抽风自动给普通公式加 {}
+    """
+    print(f"\n🧹 开始全局清洗 Workbook 数组公式标记...")
+    total_cleaned = 0
+    if("各外协齐套达成情况" not in wb): return
+    for sheet_name in ["各外协齐套达成情况"]:
+        ws = wb[sheet_name]
+        sheet_cleaned = 0
+        
+        # 遍历所有已使用的单元格
+        for row in ws.iter_rows():
+            for cell in row:
+                # 如果单元格有值且是公式
+                if cell.value and isinstance(cell.value, str) and cell.value.startswith("="):
+                    # 检查并强制清空 array_formula 属性 (新版 openpyxl)
+                    if hasattr(cell, 'array_formula') and cell.array_formula:
+                        # 把 array_formula 的内容取出来还给 value
+                        if not cell.value or cell.value == "":
+                            cell.value = cell.array_formula.replace("{", "").replace("}", "")
+                        cell.array_formula = None
+                        sheet_cleaned += 1
+                    
+                    # 检查并强制清空 data_array 属性 (旧版/兼容 openpyxl)
+                    if hasattr(cell, 'data_array') and cell.data_array:
+                        cell.data_array = None
+                        sheet_cleaned += 1
 
+        if sheet_cleaned > 0:
+            print(f"   📄 Sheet [{sheet_name}] 清洗了 {sheet_cleaned} 个单元格")
+        total_cleaned += sheet_cleaned
+    
+    print(f"✅ 全局清洗完成，共处理 {total_cleaned} 个潜在异常单元格")
+
+# import zipfile
+# import re
+# import os
+# import shutil
+# from tempfile import mkdtemp
+
+# def physically_remove_array_formulas_from_xlsx(file_path):
+#     """
+#     【釜底抽薪·终极方案】
+#     不依赖 openpyxl 对象，直接解压 xlsx，暴力正则替换 XML 中的数组公式标记
+#     """
+#     if not os.path.exists(file_path):
+#         print(f"❌ 文件不存在：{file_path}")
+#         return
+
+#     print(f"\n⚡⚡⚡ 开始底层 XML 清洗：{os.path.basename(file_path)} ⚡⚡⚡")
+    
+#     # 1. 创建临时目录
+#     temp_dir = mkdtemp()
+#     files_modified = 0
+
+#     try:
+#         # 2. 解压 xlsx (本质是 zip)
+#         with zipfile.ZipFile(file_path, 'r') as zip_ref:
+#             zip_ref.extractall(temp_dir)
+
+#         # 3. 定位到 worksheets 目录
+#         ws_dir = os.path.join(temp_dir, 'xl', 'worksheets')
+#         if not os.path.exists(ws_dir):
+#             print("⚠️  未找到 worksheet 目录，可能不是标准 xlsx")
+#             return
+
+#         # 4. 遍历所有 sheetN.xml 文件
+#         for filename in os.listdir(ws_dir):
+#             if not filename.startswith('sheet') or not filename.endswith('.xml'):
+#                 continue
+            
+#             file_path_xml = os.path.join(ws_dir, filename)
+#             with open(file_path_xml, 'r', encoding='utf-8') as f:
+#                 content = f.read()
+
+#             original_content = content
+            
+#             # ==========================================
+#             # 🔥 核心清洗逻辑：正则替换 XML 标签
+#             # ==========================================
+            
+#             # 清洗 1: 移除 <f> 标签上的 t="array" 属性和 ref 属性
+#             # 例如：<f t="array" ref="A1:A10">...</f> -> <f>...</f>
+#             content = re.sub(r'<f([^>]*?)\s+t="array"([^>]*?)>', r'<f\1\2>', content)
+#             content = re.sub(r'<f([^>]*?)\s+ref="[^"]*"([^>]*?)>', r'<f\1\2>', content)
+            
+#             # 清洗 2: 移除 <f> 标签内可能残留的 {} (虽然通常在XML里不直接存这个，但以防万一)
+#             # 这里的逻辑是：如果公式内容以 {= 开头，强制去掉 {
+#             # 注意：XML 中 < 和 > 是转义的，但公式里的 { 通常不转义
+            
+#             # 清洗 3: 移除专门的数组公式块 <t> 或者 <v> 旁边的特殊标记 (视 openpyxl 版本而定)
+#             # 这是一个兜底策略，确保公式标签干净
+            
+#             # 检查是否有修改
+#             if content != original_content:
+#                 with open(file_path_xml, 'w', encoding='utf-8') as f:
+#                     f.write(content)
+#                 files_modified += 1
+#                 print(f"   ✅ 已清洗：{filename}")
+
+#         if files_modified == 0:
+#             print(f"   ℹ️  未发现需要清洗的数组公式标记，文件保持原样")
+#             return
+
+#         # 5. 重新打包回 xlsx
+#         # 先备份原文件
+#         backup_path = file_path + ".bak"
+#         if os.path.exists(backup_path):
+#             os.remove(backup_path)
+#         shutil.move(file_path, backup_path)
+        
+#         # 重新压缩
+#         with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+#             for root, dirs, files in os.walk(temp_dir):
+#                 for file in files:
+#                     file_full_path = os.path.join(root, file)
+#                     arcname = os.path.relpath(file_full_path, temp_dir)
+#                     zipf.write(file_full_path, arcname)
+
+#         print(f"✅✅✅ 底层清洗完成！文件已更新：{file_path}")
+#         print(f"   (原文件已备份为：{os.path.basename(backup_path)})")
+
+#     except Exception as e:
+#         print(f"❌ 底层清洗失败：{str(e)}")
+#     finally:
+#         # 6. 清理临时目录
+#         try:
+#             shutil.rmtree(temp_dir)
+#         except:
+#             pass
+import zipfile
+import re
+import os
+import shutil
+from tempfile import mkdtemp
+import xml.etree.ElementTree as ET
+
+def remove_curly_braces_from_specific_sheets(file_path, target_sheet_names):
+    """
+    【精准靶向】只删除指定Sheet的数组公式标记{}
+    :param file_path: Excel文件路径
+    :param target_sheet_names: 要清洗的Sheet名称列表，例如 ["Sheet1", "出货明细表"]
+    """
+    if not os.path.exists(file_path):
+        print(f"❌ 文件不存在：{file_path}")
+        return
+
+    if not target_sheet_names:
+        print("⚠️  未指定要清洗的Sheet名称，跳过")
+        return
+
+    print(f"\n🎯 开始精准清洗：{os.path.basename(file_path)}")
+    print(f"   目标Sheet：{target_sheet_names}")
+    
+    temp_dir = mkdtemp()
+    sheets_to_process = [] # 存储需要处理的 sheetN.xml 文件名
+
+    try:
+        # 1. 解压文件
+        with zipfile.ZipFile(file_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+
+        # ==========================================
+        # 第一步：解析 workbook.xml，建立 Sheet名 -> 文件名 的映射
+        # ==========================================
+        workbook_path = os.path.join(temp_dir, 'xl', 'workbook.xml')
+        if not os.path.exists(workbook_path):
+            print("❌ 无法找到 workbook.xml")
+            return
+
+        # 解析XML获取Sheet ID和名称的对应关系
+        # Excel的命名空间
+        ns = {'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+        tree = ET.parse(workbook_path)
+        root = tree.getroot()
+        
+        # 遍历所有Sheet节点
+        for sheet in root.findall('.//main:sheet', ns):
+            sheet_name = sheet.get('name')
+            sheet_id = sheet.get('sheetId') # 或者用 r:id 来获取关系ID
+            
+            # 获取关系ID (r:id)，这才是对应 sheetN.xml 的关键
+            # 命名空间处理比较麻烦，我们用更简单的方法：直接遍历属性
+            rel_id = None
+            for attr_name, attr_value in sheet.attrib.items():
+                if 'id' in attr_name:
+                    rel_id = attr_value
+                    break
+            
+            if sheet_name in target_sheet_names:
+                # 找到了目标Sheet，构造对应的XML文件名
+                # 通常 rel_id 是 "rId1", "rId2"... 对应 sheet1.xml, sheet2.xml...
+                # 但为了保险，我们去解析关系文件
+                pass
+
+        # 更稳健的方法：解析 workbook.xml.rels
+        rels_path = os.path.join(temp_dir, 'xl', '_rels', 'workbook.xml.rels')
+        sheet_file_map = {} # {Sheet名称: 对应的XML文件名}
+        
+        if os.path.exists(rels_path):
+            rels_tree = ET.parse(rels_path)
+            rels_root = rels_tree.getroot()
+            
+            # 先从 workbook.xml 建立 {rel_id: sheet_name}
+            id_to_name = {}
+            for sheet in root.findall('.//main:sheet', ns):
+                sheet_name = sheet.get('name')
+                for attr_name, attr_value in sheet.attrib.items():
+                    if 'id' in attr_name:
+                        id_to_name[attr_value] = sheet_name
+            
+            # 再从 rels 文件建立 {rel_id: xml_path}
+            rels_ns = {'rel': 'http://schemas.openxmlformats.org/package/2006/relationships'}
+            for rel in rels_root.findall('.//rel:Relationship', rels_ns):
+                rid = rel.get('Id')
+                target = rel.get('Target') # 通常是 worksheets/sheet1.xml
+                
+                if rid in id_to_name and 'worksheets' in target:
+                    sheet_name = id_to_name[rid]
+                    xml_filename = os.path.basename(target)
+                    sheet_file_map[sheet_name] = xml_filename
+
+        # 确认我们要处理哪些文件
+        target_xml_files = []
+        for name in target_sheet_names:
+            if name in sheet_file_map:
+                target_xml_files.append(sheet_file_map[name])
+                print(f"   ✅ 映射Sheet [{name}] -> 文件 [{sheet_file_map[name]}]")
+            else:
+                print(f"   ⚠️  未在文件中找到Sheet [{name}]，跳过")
+
+        if not target_xml_files:
+            print("❌ 没有找到任何需要处理的目标Sheet")
+            return
+
+        # ==========================================
+        # 第二步：只处理目标Sheet的XML文件
+        # ==========================================
+        ws_dir = os.path.join(temp_dir, 'xl', 'worksheets')
+        files_modified = 0
+
+        for filename in os.listdir(ws_dir):
+            if filename not in target_xml_files:
+                continue # 不是目标文件，跳过
+            
+            xml_path = os.path.join(ws_dir, filename)
+            with open(xml_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            original_content = content
+            
+            # 🔥 核心操作1：移除 <f> 标签上的 t="array" 属性（这是产生{}的根源）
+            # 保留 ref 属性和其他所有属性，只删 t="array"
+            content = re.sub(r'(<f[^>]*?)\s+t="array"([^>]*?>)', r'\1\2', content)
+            
+            # 🔥 核心操作2：如果公式文本里确实包含 {=...}，只剥掉最外层的{}
+            # 注意：这里非常小心，只处理以 {= 开头，以 } 结尾的公式
+            # 不碰@，不碰公式内部的任何字符
+            def strip_curly_from_formula_text(match):
+                full_tag = match.group(0)
+                formula_content = match.group(1)
+                
+                # 检查是否以 {= 开头并以 } 结尾
+                if formula_content.startswith('{=') and formula_content.endswith('}'):
+                    # 剥掉最外层的 {}
+                    new_content = formula_content[1:-1]
+                    return full_tag.replace(formula_content, new_content)
+                return full_tag
+            
+            # 应用替换
+            content = re.sub(r'<f[^>]*>(.*?)</f>', strip_curly_from_formula_text, content)
+
+            # 保存修改
+            if content != original_content:
+                with open(xml_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                files_modified += 1
+                print(f"   ✅ 已清洗文件：{filename}")
+
+        if files_modified == 0:
+            print("   ℹ️  目标Sheet中未发现需要清洗的数组公式标记")
+            return
+
+        # ==========================================
+        # 第三步：重新打包
+        # ==========================================
+        backup_path = file_path + ".bak"
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+        shutil.move(file_path, backup_path)
+        
+        with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(temp_dir):
+                for file in files:
+                    file_full_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_full_path, temp_dir)
+                    zipf.write(file_full_path, arcname)
+
+        print(f"\n✅✅✅ 精准清洗完成！")
+        print(f"   处理文件：{file_path}")
+        print(f"   原文件备份：{os.path.basename(backup_path)}")
+
+    except Exception as e:
+        print(f"❌ 清洗失败：{str(e)}")
+    finally:
+        try:
+            shutil.rmtree(temp_dir)
+        except:
+            pass
+# ================= 如何使用 =================
+# 在你代码中所有 wb.save(...) 之后，立刻调用：
+# physically_remove_array_formulas_from_xlsx("你的文件名.xlsx")
 # 替换系统默认的print
+
+
+import zipfile
+import re
+import os
+import shutil
+from tempfile import mkdtemp
+import xml.etree.ElementTree as ET
+
+def native_365_cleanup(file_path, target_sheet_names):
+    """
+    【原生365专属·零兼容】
+    1. 只删除指定Sheet的数组公式标记{}
+    2. 原生关闭Excel自动加@的功能（官方开关）
+    3. 保留所有365特性，不降级，不兼容
+    """
+    if not os.path.exists(file_path):
+        print(f"❌ 文件不存在：{file_path}")
+        return
+
+    if not target_sheet_names:
+        print("⚠️  未指定要清洗的Sheet名称，跳过")
+        return
+
+    print(f"\n⚡⚡⚡ 开始原生365格式清洗：{os.path.basename(file_path)} ⚡⚡⚡")
+    print(f"   目标Sheet：{target_sheet_names}")
+    
+    temp_dir = mkdtemp()
+
+    try:
+        # 1. 解压文件
+        with zipfile.ZipFile(file_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+
+        # ==========================================
+        # 🔥 第一步：建立Sheet名→XML文件名映射
+        # ==========================================
+        ns = {'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+        rels_ns = {'rel': 'http://schemas.openxmlformats.org/package/2006/relationships'}
+        
+        workbook_path = os.path.join(temp_dir, 'xl', 'workbook.xml')
+        rels_path = os.path.join(temp_dir, 'xl', '_rels', 'workbook.xml.rels')
+        
+        # 解析workbook.xml获取id→name
+        id_to_name = {}
+        tree = ET.parse(workbook_path)
+        root = tree.getroot()
+        for sheet in root.findall('.//main:sheet', ns):
+            sheet_name = sheet.get('name')
+            for attr_name, attr_value in sheet.attrib.items():
+                if 'id' in attr_name:
+                    id_to_name[attr_value] = sheet_name
+        
+        # 解析rels获取id→xml文件名
+        sheet_file_map = {}
+        rels_tree = ET.parse(rels_path)
+        rels_root = rels_tree.getroot()
+        for rel in rels_root.findall('.//rel:Relationship', rels_ns):
+            rid = rel.get('Id')
+            target = rel.get('Target')
+            if rid in id_to_name and 'worksheets' in target:
+                sheet_file_map[id_to_name[rid]] = os.path.basename(target)
+
+        # 筛选目标文件
+        target_xml_files = []
+        for name in target_sheet_names:
+            if name in sheet_file_map:
+                target_xml_files.append(sheet_file_map[name])
+                print(f"   ✅ 映射Sheet [{name}] → 文件 [{sheet_file_map[name]}]")
+            else:
+                print(f"   ⚠️  未找到Sheet [{name}]，跳过")
+
+        if not target_xml_files:
+            print("❌ 没有找到任何需要处理的目标Sheet")
+            return
+
+        # ==========================================
+        # 🔥 第二步：只处理指定Sheet，删除{}和残留@
+        # ==========================================
+        ws_dir = os.path.join(temp_dir, 'xl', 'worksheets')
+        for filename in os.listdir(ws_dir):
+            if filename not in target_xml_files:
+                continue  # 非目标Sheet，原封不动
+            
+            xml_path = os.path.join(ws_dir, filename)
+            with open(xml_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # 只删t="array"属性（产生{}的根源）
+            content = re.sub(r'(<f[^>]*?)\s+t="array"([^>]*?>)', r'\1\2', content)
+            # 只剥掉公式最外层的{}
+            content = re.sub(r'<f[^>]*>{=(.*?)}</f>', r'<f>=\1</f>', content)
+            # 删除可能残留的@（双重保险）
+            content = re.sub(r'(<f[^>]*>)(.*?)(</f>)', lambda m: m.group(1) + m.group(2).replace('@', '') + m.group(3), content)
+
+            with open(xml_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"   ✅ 清洗目标Sheet：{filename}")
+
+        # ==========================================
+        # 🔥 第三步：【官方原生开关】彻底关闭自动加@
+        # ==========================================
+        calc_pr_path = os.path.join(temp_dir, 'xl', 'calcPr.xml')
+        if os.path.exists(calc_pr_path):
+            with open(calc_pr_path, 'r', encoding='utf-8') as f:
+                calc_content = f.read()
+            
+            # 核心：设置implicitIntersection="false"
+            # 这是Excel 365原生支持的官方属性，微软文档明确记载
+            if 'implicitIntersection' in calc_content:
+                calc_content = re.sub(r'implicitIntersection="[^"]*"', 'implicitIntersection="false"', calc_content)
+            else:
+                calc_content = calc_content.replace('<calcPr', '<calcPr implicitIntersection="false"')
+            
+            with open(calc_pr_path, 'w', encoding='utf-8') as f:
+                f.write(calc_content)
+            print(f"   ✅ 原生关闭Excel自动加@功能（文件级）")
+
+        # 3. 重新打包
+        backup_path = file_path + ".bak"
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+        shutil.move(file_path, backup_path)
+        
+        with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(temp_dir):
+                for file in files:
+                    file_full_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_full_path, temp_dir)
+                    zipf.write(file_full_path, arcname)
+
+        print(f"\n✅✅✅ 原生365清洗完成！")
+        print(f"   处理文件：{file_path}")
+        print(f"   原文件备份：{os.path.basename(backup_path)}")
+        print(f"   🎯 验证：现在打开文件，绝对不会再自动加@和了！")
+
+    except Exception as e:
+        print(f"❌ 清洗失败：{str(e)}")
+    finally:
+        try:
+            shutil.rmtree(temp_dir)
+        except:
+            pass
 builtins = __import__("builtins")
 builtins.print = safe_print
 
@@ -240,32 +696,60 @@ out_file_path: str = ""
 use_global_out_file: bool = False  # 是否启用全局唯一文件模式
 
 # ===================== 公式引用自动调整函数 =====================
+# def adjust_formula_row_reference(formula: str, template_row: int, target_row: int) -> str:
+#     if not formula or not str(formula).startswith("="):
+#         return formula
+
+#     row_offset = target_row - template_row
+#     if row_offset == 0:
+#         return formula
+
+#     # 正则匹配单元格引用（支持A1、$A1、A$1、$A$1格式）
+#     cell_pattern = re.compile(r'([$]?)([A-Za-z]+)([$]?)(\d+)')
+
+#     def replace_cell_ref(match):
+#         col_abs, col_letter, row_abs, row_num = match.groups()
+#         row_num = int(row_num)
+
+#         # 只有行不是绝对引用时，才调整行号
+#         if row_abs == "":
+#             new_row_num = row_num + row_offset
+#             return f"{col_abs}{col_letter}{row_abs}{new_row_num}"
+#         else:
+#             return f"{col_abs}{col_letter}{row_abs}{row_num}"
+
+#     # 替换所有符合条件的单元格引用
+#     adjusted_formula = cell_pattern.sub(replace_cell_ref, formula)
+#     return adjusted_formula
 def adjust_formula_row_reference(formula: str, template_row: int, target_row: int) -> str:
     if not formula or not str(formula).startswith("="):
         return formula
+
+    # 🔥 第一层去 {}：清理原始公式
+    formula = str(formula).strip("{}")
+    formula = formula.replace("{", "").replace("}", "")
 
     row_offset = target_row - template_row
     if row_offset == 0:
         return formula
 
-    # 正则匹配单元格引用（支持A1、$A1、A$1、$A$1格式）
+    # 正则匹配单元格引用
     cell_pattern = re.compile(r'([$]?)([A-Za-z]+)([$]?)(\d+)')
 
     def replace_cell_ref(match):
         col_abs, col_letter, row_abs, row_num = match.groups()
         row_num = int(row_num)
-
-        # 只有行不是绝对引用时，才调整行号
         if row_abs == "":
             new_row_num = row_num + row_offset
             return f"{col_abs}{col_letter}{row_abs}{new_row_num}"
         else:
             return f"{col_abs}{col_letter}{row_abs}{row_num}"
 
-    # 替换所有符合条件的单元格引用
     adjusted_formula = cell_pattern.sub(replace_cell_ref, formula)
+    
+    # 🔥 第二层去 {}：清理调整后的公式
+    adjusted_formula = adjusted_formula.replace("{", "").replace("}", "")
     return adjusted_formula
-
 # ===================== 核心：文件格式检测与重命名 =====================
 def detect_file_real_format(file_path: str) -> str:
     """检测真实格式并输出详细日志"""
@@ -843,8 +1327,11 @@ def save_global_out_file() -> bool:
         return False
     
     try:
+        remove_all_array_formulas_from_workbook(out_workbook)
         out_workbook.save(out_file_path)
         out_workbook.close()
+        native_365_cleanup(out_file_path,["各外协齐套达成情况"])
+
         print(f"\n✅ 成功保存全局输出文件：{out_file_path}")
         # 重置全局变量
         out_workbook = None
@@ -1120,7 +1607,10 @@ def load_local_file(local_file_path: str, temp_dir: str) -> Optional[str]:
 
 
 def replace_local_cols(extract_data: Dict[str, List[Any]], local_rule: Dict[str, Any]) -> bool:
-    """按列标识精准写入本地列，保留原始映射"""
+    """按列标识精准写入本地列，保留原始映射
+    新增 append2 模式：按唯一键判断是否已存在，不存在才追加
+    支持 unique_key_cols 范围格式（如"A-N"、"C-F"）
+    """
     global out_workbook, use_global_out_file
     
     if not extract_data:
@@ -1142,11 +1632,32 @@ def replace_local_cols(extract_data: Dict[str, List[Any]], local_rule: Dict[str,
         """按列标识清空配置列旧数据"""
         if ws.max_row <= header_row:
             return
+        clear_start_row = header_row + 1
+
         for col_letter in col_letter_list:
             col_idx = get_col_index_compatible(ws, col_letter, header_row, "xlsx")
             for row in range(header_row + 1, ws.max_row + 1):
-                ws.cell(row=row, column=col_idx, value=None)
+                ws.cell(row=row, column=col_idx).value=None
+        ws.delete_rows(clear_start_row, ws.max_row - clear_start_row + 1)
         print(f"✅ 精准清空{len(col_letter_list)}个配置列的旧数据行")
+
+    # ===================== 新增：获取唯一键 =====================
+    def get_unique_key(ws, row, unique_col_indexes):
+        """生成一行的唯一键（tuple）"""
+        key_parts = []
+        for col_idx in unique_col_indexes:
+            val = clean_text(ws.cell(row=row, column=col_idx).value)
+            key_parts.append(val)
+        return tuple(key_parts)
+
+    def build_existing_key_set(ws, header_row, unique_col_indexes):
+        """构建本地文件已存在的唯一键集合"""
+        key_set = set()
+        max_row = ws.max_row
+        for row in range(header_row + 1, max_row + 1):
+            key = get_unique_key(ws, row, unique_col_indexes)
+            key_set.add(key)
+        return key_set
 
     # 通用配置
     sheet_name = local_rule["sheet"]
@@ -1156,6 +1667,10 @@ def replace_local_cols(extract_data: Dict[str, List[Any]], local_rule: Dict[str,
     deduplicate = local_rule["deduplicate"]
     deduplicate_cols = local_rule["deduplicate_cols"]
     force_formula_cols = local_rule.get("force_formula_cols", [])
+
+    # ===================== 新增：append2 唯一键配置 =====================
+    unique_key_cols = local_rule.get("unique_key_cols", [])  # 你新加的配置
+    is_append2 = (write_mode == "append2")
 
     try:
         # 解析列列表
@@ -1201,27 +1716,120 @@ def replace_local_cols(extract_data: Dict[str, List[Any]], local_rule: Dict[str,
             col_name = clean_text(ws.cell(row=header_row, column=col_idx).value)
             print(f"   列{local_col}：{col_name}")
 
-        # 清空旧数据
+        # ===================== 模式处理 =====================
         if write_mode == "overwrite":
             clear_config_cols_by_letter(ws, local_full_col_letter_list, header_row)
-
-        # 确定写入起始行
-        if write_mode == "overwrite":
             write_start_row = header_row + 1
-        else:
+            keep_data = extract_data
+
+        elif write_mode == "append":
+            write_start_row = ws.max_row + 1
+            keep_data = extract_data
+
+        # ===================== 🔥 新增：append2 模式（支持范围格式） =====================
+        elif is_append2:
+            if not unique_key_cols:
+                raise ValueError("append2 模式必须配置 unique_key_cols 作为唯一判断列")
+
+            # 核心修改：用parse_col_list解析范围格式（如"A-N"→A,B,C...N）
+            parsed_unique_key_cols = parse_col_list(unique_key_cols)
+            print(f"\n🔑 append2 唯一键列（原始配置）：{unique_key_cols}")
+            print(f"🔑 append2 唯一键列（解析后）：{parsed_unique_key_cols}")
+
+            # 解析唯一键列索引
+            unique_col_indexes = []
+            for col_id in parsed_unique_key_cols:
+                col_idx = get_col_index_compatible(ws, col_id, header_row, "xlsx")
+                unique_col_indexes.append(col_idx)
+                # 打印唯一键列的名称（方便核对）
+                col_name = clean_text(ws.cell(row=header_row, column=col_idx).value)
+                #print(f"   唯一键列{col_id}：{col_name}（索引：{col_idx}）")
+
+            # 读取本地已存在的键
+            existing_keys = build_existing_key_set(ws, header_row, unique_col_indexes)
+            print(f"📋 本地已有 {len(existing_keys)} 行唯一数据（按{parsed_unique_key_cols}列判断）")
+            
+            # 只保留本地不存在的行
+            keep_row_indexes = []
+            total_rows = len(list(extract_data.values())[0])
+
+            # 构造待插入数据的每一行唯一键
+            for row_idx in range(total_rows):
+                row_key_parts = []
+                for attach_col, local_col in col_mapping.items():
+                    val = clean_text(extract_data[attach_col][row_idx])
+                    row_key_parts.append(val)
+                row_key = tuple(row_key_parts)
+
+                if row_key not in existing_keys:
+                    keep_row_indexes.append(row_idx)
+                else:
+                    pass
+                    #print(f"   🔍 已存在，跳过：{row_key}")
+
+            # 过滤出要追加的数据
+            keep_data = {}
+            for col, val_list in extract_data.items():
+                keep_data[col] = [val_list[i] for i in keep_row_indexes]
+
+            if not keep_row_indexes:
+                print("\n✅ 所有数据已存在，无需追加")
+                return True
+
+            print(f"\n🆕 筛选后需要追加：{len(keep_row_indexes)} 行新数据")
             write_start_row = ws.max_row + 1
 
-        # 获取数据行数
-        data_rows_count = len(list(extract_data.values())[0]) if extract_data else 0
-        print(f"\n🚀 开始批量写入{data_rows_count}行数据...")
+        else:
+            raise ValueError(f"不支持的 write_mode: {write_mode}（支持 overwrite/append/append2）")
 
         # 写入数据
+        data_rows_count = len(list(keep_data.values())[0]) if keep_data else 0
+        print(f"\n🚀 开始批量写入{data_rows_count}行数据...")
+
         for attach_col, local_col in col_mapping.items():
-            col_data = extract_data[attach_col]
+            col_data = keep_data[attach_col]
             batch_write_column_by_letter(ws, local_col, write_start_row, col_data, header_row)
 
-            # 公式下拉逻辑
-            if (write_mode == "overwrite" or (write_mode == "append" and data_rows_count > 0)) and force_formula_cols:
+            # 公式下拉
+            # if (write_mode in ["overwrite", "append", "append2"]) and force_formula_cols:
+            #     formula_cols = []
+            #     for col in force_formula_cols:
+            #         try:
+            #             formula_cols.append(column_index_from_string(col) if isinstance(col, str) else col)
+            #         except:
+            #             print(f"⚠️  无效的强制公式列：{col}，跳过")
+            #     formula_cols = list(set(formula_cols))
+            #     print(f"[强制模式] 待处理公式列：{[get_column_letter(c) for c in formula_cols]}")
+
+            #     if formula_cols:
+            #         formula_template_row = header_row
+            #         if formula_template_row > ws.max_row:
+            #             formula_template_row = write_start_row
+
+            #         for f_col_idx in formula_cols:
+            #             f_col_letter = get_column_letter(f_col_idx)
+            #             formula_template = ws.cell(row=formula_template_row, column=f_col_idx).value
+            #             if not formula_template or not str(formula_template).startswith("="):
+            #                 print(f"[调试] 列{f_col_letter} 无有效公式模板，跳过")
+            #                 continue
+            #             formula_template = formula_template.strip("{}")
+
+            #             print(f"[调试] 列{f_col_letter} 公式模板：{formula_template}")
+
+            #             for row_offset in range(len(col_data)):
+            #                 target_row = write_start_row + row_offset
+            #                 adjusted_formula = adjust_formula_row_reference(
+            #                     formula=formula_template,
+            #                     template_row=formula_template_row,
+            #                     target_row=target_row
+            #                 )
+            #                 #ws.cell(row=target_row, column=f_col_idx, value=adjusted_formula)
+            #                 clean_formula = adjusted_formula.strip("{}")
+            #                 ws.cell(row=target_row, column=f_col_idx, value=clean_formula)
+                            
+            #             print(f"   📌 本地列{local_col}后续列{f_col_letter}公式下拉完成")
+            # ===================== 公式下拉（兼容所有openpyxl版本，无 {}）=====================
+            if (write_mode in ["overwrite", "append", "append2"]) and force_formula_cols:
                 formula_cols = []
                 for col in force_formula_cols:
                     try:
@@ -1232,19 +1840,22 @@ def replace_local_cols(extract_data: Dict[str, List[Any]], local_rule: Dict[str,
                 print(f"[强制模式] 待处理公式列：{[get_column_letter(c) for c in formula_cols]}")
 
                 if formula_cols:
-                    formula_template_row = header_row + 1
+                    formula_template_row = header_row
                     if formula_template_row > ws.max_row:
                         formula_template_row = write_start_row
 
                     for f_col_idx in formula_cols:
                         f_col_letter = get_column_letter(f_col_idx)
                         formula_template = ws.cell(row=formula_template_row, column=f_col_idx).value
+                        
+                        # 🔥 第三层去 {}：读取模板时清理
                         if not formula_template or not str(formula_template).startswith("="):
                             print(f"[调试] 列{f_col_letter} 无有效公式模板，跳过")
                             continue
+                        
+                        formula_template = str(formula_template).replace("{", "").replace("}", "")
                         print(f"[调试] 列{f_col_letter} 公式模板：{formula_template}")
 
-                        # 批量下拉公式
                         for row_offset in range(len(col_data)):
                             target_row = write_start_row + row_offset
                             adjusted_formula = adjust_formula_row_reference(
@@ -1252,29 +1863,39 @@ def replace_local_cols(extract_data: Dict[str, List[Any]], local_rule: Dict[str,
                                 template_row=formula_template_row,
                                 target_row=target_row
                             )
-                            ws.cell(row=target_row, column=f_col_idx, value=adjusted_formula)
+
+                            # 🔥 最终确认：写入前再清一次（四重保障）
+                            final_formula = adjusted_formula.replace("{", "").replace("}", "")
+                            
+                            # ✅ 纯原生兼容写法，无任何无效参数
+                            ws.cell(row=target_row, column=f_col_idx).value = final_formula
 
                         print(f"   📌 本地列{local_col}后续列{f_col_letter}公式下拉完成")
 
-        # 数据去重
+        # 去重（可选）
         if deduplicate and deduplicate_cols:
             print(f"\n🆔 开始数据去重...")
             deduplicate_data_rows(ws, header_row, deduplicate_cols, header_row + 1)
 
-        # 保存文件
+        # 保存
         if use_global_out_file and out_workbook:
             print(f"\n✅ 全局模式：Sheet「{sheet_name}」处理完成（暂存内存）")
             return True
         else:
             print(f"\n💾 保存文件到：{output_path}...")
+            remove_all_array_formulas_from_workbook(wb)
             wb.save(output_path)
             wb.close()
+            native_365_cleanup(output_path,["各外协齐套达成情况"])
             print(f"\n🎉 本地文件处理完成 → {output_path}")
             print(f"📋 处理总结：")
             print(f"   写入模式：{write_mode}")
             print(f"   写入行数：{data_rows_count}")
             print(f"   去重开关：{deduplicate}")
             print(f"   强制公式列：{force_formula_cols or '无'}")
+            if is_append2:
+                print(f"   唯一键列（原始）：{unique_key_cols}")
+                print(f"   唯一键列（解析后）：{parsed_unique_key_cols}")
             return True
 
     except Exception as e:
@@ -1284,12 +1905,16 @@ def replace_local_cols(extract_data: Dict[str, List[Any]], local_rule: Dict[str,
         return False
 def process_data_by_rules(extract_data: Dict[str, List[Any]], process_rules: List[Dict[str, Any]]) -> Dict[str, List[Any]]:
     """
-    按顺序执行数据处理规则：delete_str（删除指定字符串）、slice_combine（切片+拼接）
+    按顺序执行数据处理规则：
+    1. delete_str（删除指定字符串）
+    2. slice_combine（切片+拼接）
+    3. replace_str（替换指定字符串为新字符串）【新增】
     :param extract_data: 原始提取数据 {列字母: [值列表]}
     :param process_rules: 处理规则列表，格式示例：
         [
             {"type": "delete_str", "col": "A", "target_str": "测试"},
-            {"type": "slice_combine", "col": "B", "slice_rule": "[3:-6]", "combine_str": "BIN"}
+            {"type": "slice_combine", "col": "B", "slice_rule": "[3:-6]", "combine_str": "BIN"},
+            {"type": "replace_str", "col": "C", "old_str": "旧值", "new_str": "新值"}  # 新增规则
         ]
     :return: 处理后的数据
     """
@@ -1366,8 +1991,29 @@ def process_data_by_rules(extract_data: Dict[str, List[Any]], process_rules: Lis
             processed_data[col] = new_values
             print(f"      ✅ 完成切片拼接，共处理{len(new_values)}行")
         
+        # 规则3：替换指定字符串为新字符串【新增核心功能】
+        elif proc_type == "replace_str":
+            old_str = rule.get("old_str", "")  # 要替换的旧字符串
+            new_str = rule.get("new_str", "")  # 替换后的新字符串
+            new_values = []
+            
+            for val in values:
+                if val is None:
+                    new_values.append(val)
+                    continue
+                str_val = str(val)
+                new_val = str_val.replace(old_str, new_str)  # 核心替换逻辑
+                new_values.append(new_val)
+                # 打印前3条示例，方便验证效果
+                if len(new_values) <= 3:
+                    print(f"      示例：{str_val} → 替换'{old_str}'为'{new_str}' → {new_val}")
+            
+            processed_data[col] = new_values
+            print(f"      ✅ 完成字符串替换，共处理{len(new_values)}行")
+            print(f"         替换规则：'{old_str}' → '{new_str}'")
+        
         else:
-            raise ValueError(f"不支持的规则类型：{proc_type}（仅支持delete_str/slice_combine）")
+            raise ValueError(f"不支持的规则类型：{proc_type}（仅支持delete_str/slice_combine/replace_str）")
     
     return processed_data
 def extract_cols_from_attach(attach_path: str, attach_rule: Dict[str, Any], process_rules: List[Dict[str, Any]] = []) -> Dict[str, List[Any]]:
@@ -1484,7 +2130,7 @@ def send_email_with_attachment(config, file_path):
     except Exception as e:
         print(f"\n❌ 邮件发送失败：{str(e)}")
 # ===================== 主函数 =====================
-def main(config_path: str = "./config.json"):
+def main(config_path: str = "D:\\供应链\\芯片\\configchV8.json"):
     try:
         # 加载配置（原有代码）
         print("📋 加载配置文件...")
@@ -1599,4 +2245,6 @@ def main(config_path: str = "./config.json"):
             save_global_out_file()
 if __name__ == "__main__":
     # 请修改为你的配置文件实际路径
-    main(config_path="D:\\供应链\\芯片\\configchV8.json")
+    
+    config_path=sys.argv[1]
+    main(config_path=config_path)
