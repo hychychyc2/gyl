@@ -524,6 +524,7 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         LEFT JOIN model_mapping m ON i.device_prog_bin = m.device_prog_bin
         LEFT JOIN usage_mapping u ON m.device LIKE u.device || '%' AND m.model1 = u.project
         {where_clause}
+        AND i.device != '' AND i.device != '#N/A'
         GROUP BY i.device, i.device_prog_bin, i.warehouse_name, i.warehouse_type
         ORDER BY i.warehouse_type, total_qty DESC
         LIMIT 500
