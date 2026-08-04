@@ -297,7 +297,7 @@ async function loadShip() {
   const s = ($('#ship-s')?.value || '').toLowerCase();
   let where = ''; let params = [];
   if (s) { where = 'device_pn LIKE ? OR osat LIKE ? OR invoice_no LIKE ?'; params = [`%${s}%`, `%${s}%`, `%${s}%`]; }
-  const r = await api('/api/query/', { method: 'POST', body: { table: 'shipping_detail', where, params, order_by: 'ship_date DESC', limit: 200 } });
+  const r = await api('/api/query', { method: 'POST', body: { table: 'shipping_detail', where, params, order_by: 'ship_date DESC', limit: 200 } });
   const c = $('#ship-tbl'); if (!c) return;
   c.innerHTML = '';
   c.appendChild(table(
@@ -426,7 +426,7 @@ async function autoPlan() {
 // ============ 出货计划 ============
 async function plan() {
   const m = $('#main');
-  const r = await api('/api/query/', { method: 'POST', body: { table: 'shipping_plan', order_by: 'warehouse_type, device', limit: 500 } });
+  const r = await api('/api/query', { method: 'POST', body: { table: 'shipping_plan', order_by: 'warehouse_type, device', limit: 500 } });
   m.innerHTML = el('h2', {}, '📋 出货计划');
   m.appendChild(table(
     ['plan_date','osat','device','bin','qty','warehouse_type','from_warehouse','ship_to','model_name','status'].map(k => ({ key: k, label: k })),
@@ -441,7 +441,7 @@ async function plan() {
 // ============ ERP库存 ============
 async function erp() {
   const m = $('#main');
-  const r = await api('/api/query/', { method: 'POST', body: { table: 'erp_inventory', limit: 500, order_by: 'created_at DESC' } });
+  const r = await api('/api/query', { method: 'POST', body: { table: 'erp_inventory', limit: 500, order_by: 'created_at DESC' } });
   m.innerHTML = el('h2', {}, '🏭 ERP库存');
   m.appendChild(table(
     ['org','material_code','device','bin','qty','sub_inventory','batch'].map(k => ({ key: k, label: k })),

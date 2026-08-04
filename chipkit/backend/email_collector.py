@@ -82,33 +82,42 @@ def download_email_attachments(config: Dict, temp_dir: str) -> Optional[tuple]:
     suffix = config.get('suffix', '.xlsx')
 
     if not account or not password:
-        print(f"  ⚠️ 邮箱配置不完整")
+        print(f"  ⚠️ 邮箱配置不完整: account={account[:5]}...")
         return None
 
     try:
+        print(f"  📧 连接 {imap_server}...")
         mail = imaplib.IMAP4_SSL(imap_server)
         mail.login(account, password)
+        print(f"  ✅ 登录成功")
 
-        # 搜索今天+昨天的邮件
+        # 搜索最近30天的邮件
         today = datetime.now().date()
-        yesterday = today - timedelta(days=1)
-        criteria = f'(SINCE "{get_imap_date_str(datetime(yesterday.year, yesterday.month, yesterday.day))}")'
+        month_ago = today - timedelta(days=30)
+        criteria = f'(SINCE "{get_imap_date_str(datetime(month_ago.year, month_ago.month, month_ago.day))}")'
+        print(f"  🔍 搜索条件: {criteria}")
 
         try:
             mail.select(f'"{root_folder}"', readonly=True)
-        except:
+            print(f"  📁 文件夹: {root_folder}")
+        except Exception as e:
+            print(f"  ⚠️ 文件夹 {root_folder} 失败: {e}, 尝试 INBOX")
             try:
                 mail.select('INBOX', readonly=True)
-            except:
+                print(f"  📁 使用 INBOX")
+            except Exception as e2:
+                print(f"  ❌ INBOX 也失败: {e2}")
                 mail.close(); mail.logout()
                 return None
 
         status, messages = mail.search(None, criteria)
         if status != 'OK' or not messages[0]:
+            print(f"  ⚠️ 未找到匹配邮件 (status={status})")
             mail.close(); mail.logout()
             return None
 
         email_ids = messages[0].split()
+        print(f"  📬 找到 {len(email_ids)} 封邮件")
         all_attachments = []
 
         for eid in reversed(email_ids):
