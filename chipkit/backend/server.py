@@ -264,6 +264,8 @@ class ChipKitHandler(BaseHTTPRequestHandler):
 
         if path == '/api/dashboard':
             return self._dashboard()
+        elif path == '/api/login':
+            return self._login(qs)
         elif path.startswith('/api/query/'):
             return self._generic_query(path, qs)
         elif path == '/api/query':
@@ -322,8 +324,8 @@ class ChipKitHandler(BaseHTTPRequestHandler):
 
         body = parse_post_body(self)
 
-        if path.startswith('/api/query/'):
-            return self._query_post(path, body)
+        if path == '/api/login':
+            return self._login_post(body)
         elif path == '/api/query':
             return self._query_post(path, body)
         elif path == '/api/insert/':
@@ -383,6 +385,25 @@ class ChipKitHandler(BaseHTTPRequestHandler):
             send_json(self, {'ok': ok})
         except Exception as e:
             send_json(self, {'ok': False, 'error': str(e)})
+
+    # ============ 登录 ============
+    def _login(self, qs):
+        send_json(self, {'ok': False, 'error': '请使用POST请求'})
+
+    def _login_post(self, body):
+        email_addr = body.get('email', '')
+        password = body.get('password', '')
+        # 查找用户
+        user = query('users', where='email=?', params=(email_addr,))
+        if not user:
+            return send_json(self, {'ok': False, 'error': '用户不存在'})
+        user = user[0]
+        if not user.get('active'):
+            return send_json(self, {'ok': False, 'error': '账号已禁用'})
+        # 首次登录或密码匹配
+        if user.get('password_hash') == '' or user.get('password_hash') == password:
+            return send_json(self, {'ok': True, 'user': {'id': user['id'], 'email': user['email'], 'name': user['name'], 'role': user['role']}})
+        return send_json(self, {'ok': False, 'error': '密码错误'})
 
     # ============ 仪表盘 ============
     def _dashboard(self):
@@ -484,11 +505,18 @@ class ChipKitHandler(BaseHTTPRequestHandler):
     def _inv_with_model(self, qs):
         """库存关联机型"""
         device = qs.get('device', [''])[0]
-        where = "WHERE i.device LIKE ?" if device else ""
-        params = [f'{device}%'] if device else []
+        wh_type = qs.get('warehouse_type', [''])[0]
+        where = []; params = []
+        if device:
+            where.append('i.device LIKE ?')
+            params.append(f'{device}%')
+        if wh_type:
+            where.append('i.warehouse_type = ?')
+            params.append(wh_type)
+        where_clause = 'WHERE ' + ' AND '.join(where) if where else ''
         sql = f"""
         SELECT i.device, i.device_prog_bin, i.bin, i.test_program,
-               i.warehouse_name, i.warehouse_type,
+               i.warehouse_name, i.warehouse_type, i.status, i.id, i.version,
                SUM(i.qty) as total_qty,
                m.model1, m.model2, m.model3,
                u.usage_qty,
@@ -496,9 +524,9 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         FROM inventory i
         LEFT JOIN model_mapping m ON i.device_prog_bin = m.device_prog_bin
         LEFT JOIN usage_mapping u ON i.device = u.device AND m.model1 = u.model_name
-        {where}
+        {where_clause}
         GROUP BY i.device, i.device_prog_bin, i.warehouse_name, i.warehouse_type
-        ORDER BY i.device, total_qty DESC
+        ORDER BY i.warehouse_type, total_qty DESC
         LIMIT 500
         """
         rows = raw(sql, tuple(params))

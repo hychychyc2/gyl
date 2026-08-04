@@ -186,21 +186,29 @@ async function inventory() {
 async function loadInv() {
   const s = ($('#inv-search')?.value || '').toLowerCase();
   const wh = $('#inv-wh')?.value || '';
-  let where = ''; let params = [];
-  if (s) { where += 'device LIKE ?'; params.push(`%${s}%`); }
-  if (wh) { if (where) where += ' AND '; where += 'warehouse_type=?'; params.push(wh); }
-
-  const r = await api('/api/query/', { method: 'POST', body: { table: 'inventory', where, params, order_by: 'warehouse_type, device, qty DESC', limit: 500 } });
+  
+  // 调用关联机型的API
+  let url = '/api/inventory/with_model';
+  if (s || wh) {
+    let params = [];
+    if (s) params.push(`device=${encodeURIComponent(s)}`);
+    if (wh) params.push(`warehouse_type=${encodeURIComponent(wh)}`);
+    url += '?' + params.join('&');
+  }
+  
+  const r = await api(url);
   const c = $('#inv-tbl');
   if (!c) return;
   const cols = [
     { key: 'device', label: '芯片' }, { key: 'bin', label: 'BIN' }, { key: 'test_program', label: '程序' },
-    { key: 'qty', label: '数量' }, { key: 'warehouse_type', label: '仓库类型' }, { key: 'warehouse_name', label: '仓库名称' },
-    { key: 'status', label: '状态' }, { key: 'updated_at', label: '更新时间' },
+    { key: 'total_qty', label: '数量' }, { key: 'warehouse_type', label: '仓库类型' }, { key: 'warehouse_name', label: '仓库名称' },
+    { key: 'model1', label: '机型1' }, { key: 'model2', label: '机型2' },
+    { key: 'usage_qty', label: '单机用量' }, { key: 'machine_count', label: '可做台数' },
+    { key: 'status', label: '状态' },
   ];
   c.innerHTML = '';
   c.appendChild(table(cols, r.data || [], { edit: true, editFn: async row => {
-    const v = prompt('数量:', row.qty);
+    const v = prompt('数量:', row.total_qty);
     if (v == null) return;
     await api(`/api/update/inventory/${row.id}`, { method: 'PUT', body: { qty: parseInt(v) || 0, version: row.version } });
     loadInv();
@@ -239,13 +247,33 @@ async function loadPivot() {
   const c = $('#pvt-tbl');
   if (!c) return;
   c.innerHTML = '';
+
+  // 汇总数据
+  const data = r.data || [];
+  let totalQty = 0, totalMachines = 0;
+  const byType = {};
+  data.forEach(d => {
+    totalQty += d.total_qty || 0;
+    totalMachines += d.machine_count || 0;
+    const t = d.warehouse_type || '未知';
+    byType[t] = (byType[t] || 0) + (d.total_qty || 0);
+  });
+
+  // 汇总卡片
+  const cards = el('div', { class: 'cards', style: { marginBottom: '12px' } });
+  cards.appendChild(el('div', { class: 'card' }, el('div', { class: 'card-val', style: { color: '#3b82f6' } }, totalQty.toLocaleString()), el('div', { class: 'card-lbl' }, '总芯片数')));
+  cards.appendChild(el('div', { class: 'card' }, el('div', { class: 'card-val', style: { color: '#10b981' } }, Math.floor(totalMachines).toLocaleString()), el('div', { class: 'card-lbl' }, '可做台数')));
+  cards.appendChild(el('div', { class: 'card' }, el('div', { class: 'card-val', style: { color: '#f59e0b' } }, (byType['osat'] || 0).toLocaleString()), el('div', { class: 'card-lbl' }, 'OSAT库存')));
+  cards.appendChild(el('div', { class: 'card' }, el('div', { class: 'card-val', style: { color: '#8b5cf6' } }, (byType['bonded'] || 0).toLocaleString()), el('div', { class: 'card-lbl' }, '保税仓库存')));
+  c.appendChild(cards);
+
   const cols = [
     { key: 'model1', label: '机型' }, { key: 'device', label: '芯片' },
     { key: 'warehouse_type', label: '库存类型' }, { key: 'warehouse_name', label: '仓库名称' },
     { key: 'total_qty', label: '芯片数量' }, { key: 'usage_qty', label: '单机用量' },
     { key: 'machine_count', label: '可做台数' },
   ];
-  c.appendChild(table(cols, r.data || []));
+  c.appendChild(table(cols, data));
 }
 
 // ============ 出货明细 ============
@@ -508,6 +536,7 @@ async function email() {
             if (r.ok) toast(`采集: ${r.count} 条`, 'success');
             else toast('失败: ' + r.error, 'error');
           } }, '🔄 采集'),
+          el('button', { class: 'btn btn-o btn-sm', onclick: () => editEmailConfig(row) }, '✏️ 编辑'),
           el('button', { class: 'btn btn-d btn-sm', onclick: async () => {
             if (await confirm('删除配置？')) { await api(`/api/email_configs/${row.id}`, { method: 'DELETE' }); email(); }
           } }, '🗑️'),
@@ -551,6 +580,42 @@ async function showEmailConfig() {
         const r = await api('/api/email_configs', { method: 'POST', body: d });
         if (r.ok) { toast('配置已添加', 'success'); o.remove(); email(); }
         else toast('失败: ' + r.error, 'error');
+      } }, '保存')
+    )
+  ));
+  document.body.appendChild(o);
+}
+
+async function editEmailConfig(row) {
+  const o = el('div', { class: 'modal-overlay', onclick: e => { if (e.target === o) o.remove(); } });
+  o.appendChild(el('div', { class: 'modal-box modal-lg' },
+    el('h3', {}, '✏️ 编辑邮件配置'),
+    el('div', { class: 'form-g' }, el('label', {}, '用途'), el('input', { id: 'ec-p', value: row.purpose, disabled: true })),
+    el('div', { class: 'form-g' }, el('label', {}, '描述'), el('input', { id: 'ec-desc', value: row.description || '' })),
+    el('div', { class: 'form-g' }, el('label', {}, 'IMAP服务器'), el('input', { id: 'ec-imap', value: row.imap_server || '' })),
+    el('div', { class: 'form-g' }, el('label', {}, '邮箱'), el('input', { id: 'ec-acc', value: row.account || '' })),
+    el('div', { class: 'form-g' }, el('label', {}, '密码（留空不修改）'), el('input', { id: 'ec-pw', type: 'password' })),
+    el('div', { class: 'form-g' }, el('label', {}, '文件夹'), el('input', { id: 'ec-folder', value: row.root_folder || 'INBOX' })),
+    el('div', { class: 'form-g' }, el('label', {}, '匹配关键词'), el('input', { id: 'ec-key', value: row.match_key || '' })),
+    el('div', { class: 'form-g' }, el('label', {}, '文件后缀'), el('input', { id: 'ec-suffix', value: row.suffix || '.xlsx' })),
+    el('div', { class: 'modal-btns' },
+      el('button', { class: 'btn btn-s', onclick: () => o.remove() }, '取消'),
+      el('button', { class: 'btn btn-p', onclick: async () => {
+        const d = {
+          description: $('#ec-desc').value,
+          imap_server: $('#ec-imap').value,
+          account: $('#ec-acc').value,
+          email_address: $('#ec-acc').value,
+          root_folder: $('#ec-folder').value,
+          match_key: $('#ec-key').value,
+          suffix: $('#ec-suffix').value,
+          version: row.version,
+        };
+        const pw = $('#ec-pw').value;
+        if (pw) d.password_encrypted = pw;
+        const r = await api(`/api/email_configs/${row.id}`, { method: 'PUT', body: d });
+        if (r.ok) { toast('更新成功', 'success'); o.remove(); email(); }
+        else toast('更新失败: ' + r.error, 'error');
       } }, '保存')
     )
   ));
@@ -657,4 +722,16 @@ function init() {
   nav('dashboard');
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  // 检查登录状态
+  const user = localStorage.getItem('chipkit_user');
+  if (!user) {
+    location.href = '/login.html';
+    return;
+  }
+  // 显示用户信息
+  const u = JSON.parse(user);
+  const logo = document.getElementById('sb-logo');
+  if (logo) logo.innerHTML = `🦞 齐套管理<br><small style="font-size:11px;color:#888">${u.name || u.email}</small>`;
+  init();
+});
