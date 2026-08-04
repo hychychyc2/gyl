@@ -517,6 +517,7 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         sql = f"""
         SELECT i.device, i.device_prog_bin, i.bin, i.test_program,
                i.warehouse_name, i.warehouse_type, i.status, i.id, i.version,
+               i.source_email, i.source_file, i.source_time,
                SUM(i.qty) as total_qty,
                m.model1, m.model2, m.model3,
                u.usage_qty,
@@ -671,16 +672,17 @@ class ChipKitHandler(BaseHTTPRequestHandler):
             # /api/email_configs/{id}/fetch
             rid = int(path.split('/')[2])
             cfg = dict(query('email_config', where='id=?', params=(rid,))[0])
-            fp = download_email_attachments(cfg, TEMP_DIR)
-            if not fp: return send_json(self, {'ok': False, 'error': '未找到附件'})
+            result = download_email_attachments(cfg, TEMP_DIR)
+            if not result: return send_json(self, {'ok': False, 'error': '未找到附件'})
+            fp, source_info = result[0], result[1:]
             count = 0
             p = cfg.get('purpose','')
-            if p == 'shipping_detail': count = process_shipping_detail(fp, cfg)
-            elif p == 'osat_inventory': count = process_osat_inventory(fp, cfg)
-            elif p == 'hold_inventory': count = process_hold_inventory(fp, cfg)
-            elif p == 'model_mapping': count = process_model_mapping(fp, cfg)
-            elif p == 'mix_bin': count = process_mix_bin(fp, cfg)
-            elif p == 'order_allocation': count = process_order_allocation(fp, cfg)
+            if p == 'shipping_detail': count = process_shipping_detail(fp, cfg, source_info)
+            elif p == 'osat_inventory': count = process_osat_inventory(fp, cfg, source_info)
+            elif p == 'hold_inventory': count = process_hold_inventory(fp, cfg, source_info)
+            elif p == 'model_mapping': count = process_model_mapping(fp, cfg, source_info)
+            elif p == 'mix_bin': count = process_mix_bin(fp, cfg, source_info)
+            elif p == 'order_allocation': count = process_order_allocation(fp, cfg, source_info)
             update('email_config', rid, {'last_fetch': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'version': cfg.get('version',1)})
             try: os.remove(fp)
             except: pass

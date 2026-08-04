@@ -205,6 +205,7 @@ async function loadInv() {
     { key: 'total_qty', label: '数量' }, { key: 'warehouse_type', label: '仓库类型' }, { key: 'warehouse_name', label: '仓库名称' },
     { key: 'model1', label: '机型1' }, { key: 'model2', label: '机型2' },
     { key: 'usage_qty', label: '单机用量' }, { key: 'machine_count', label: '可做台数' },
+    { key: 'source_email', label: '邮件来源' }, { key: 'source_time', label: '采集时间' },
     { key: 'status', label: '状态' },
   ];
   c.innerHTML = '';
@@ -300,7 +301,7 @@ async function loadShip() {
   const c = $('#ship-tbl'); if (!c) return;
   c.innerHTML = '';
   c.appendChild(table(
-    ['ship_date','osat','device_pn','bin','good_qty','invoice_no','ship_to','po','source'].map(k => ({ key: k, label: k })),
+    ['ship_date','osat','device_pn','bin','good_qty','invoice_no','ship_to','po','source_email','source_time','source'].map(k => ({ key: k, label: k })),
     r.data || []
   ));
 }

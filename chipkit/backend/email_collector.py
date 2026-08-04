@@ -71,8 +71,8 @@ def get_imap_date_str(d: datetime) -> str:
     return f"{d.day:02d}-{months[d.month-1]}-{d.year}"
 
 # ============ 邮件下载 ============
-def download_email_attachments(config: Dict, temp_dir: str) -> Optional[str]:
-    """从邮箱下载匹配的附件，返回文件路径"""
+def download_email_attachments(config: Dict, temp_dir: str) -> Optional[tuple]:
+    """从邮箱下载匹配的附件，返回 (文件路径, 发件人, 邮件主题, 邮件日期)"""
     account = config.get('account', '')
     password_enc = config.get('password_encrypted', '')
     password = decrypt_password(password_enc)
@@ -138,13 +138,18 @@ def download_email_attachments(config: Dict, temp_dir: str) -> Optional[str]:
             return None
 
         filename, payload, subject = all_attachments[0]
+        # 获取发件人
+        sender = decode_email_header(msg['From'])
+        mail_date = decode_email_header(msg['Date'])
+
         safe_name = re.sub(r'[\\/:*?"<>|]', '_', filename)
         save_path = os.path.join(temp_dir, safe_name)
         os.makedirs(temp_dir, exist_ok=True)
         with open(save_path, 'wb') as f:
             f.write(payload)
         print(f"  ✅ 保存: {save_path}")
-        return save_path
+        print(f"  📧 发件人: {sender} | 日期: {mail_date}")
+        return (save_path, sender, subject, mail_date)
 
     except Exception as e:
         print(f"  ❌ 邮件下载失败: {e}")
@@ -234,7 +239,7 @@ def parse_excel(file_path: str, sheet_name: str = None, header_row: int = 1,
         return []
 
 # ============ 邮件采集处理函数 ============
-def process_shipping_detail(file_path: str, config: Dict) -> int:
+def process_shipping_detail(file_path: str, config: Dict, source_info: tuple = None) -> int:
     """处理出货明细 - 从OSAT邮件获取shipping list"""
     mapping = config.get('mapping_config', {})
     if isinstance(mapping, str):
@@ -251,6 +256,10 @@ def process_shipping_detail(file_path: str, config: Dict) -> int:
         return 0
 
     batch_id = generate_batch_id()
+    src_email = source_info[0] if source_info else ''
+    src_file = source_info[1] + ' ' + source_info[2] if source_info else ''
+    src_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
     ship_rows = []
     for row in rows:
         ship_rows.append({
@@ -270,12 +279,15 @@ def process_shipping_detail(file_path: str, config: Dict) -> int:
             'po': row.get('po', '暂无'),
             'source': 'email',
             'import_batch': batch_id,
+            'source_email': src_email,
+            'source_file': src_file,
+            'source_time': src_time,
         })
     cnt = insert_many('shipping_detail', ship_rows)
     print(f"  ✅ 出货明细: {cnt} 条")
     return cnt
 
-def process_osat_inventory(file_path: str, config: Dict) -> int:
+def process_osat_inventory(file_path: str, config: Dict, source_info: tuple = None) -> int:
     """处理OSAT库存 - 覆盖式导入"""
     mapping = config.get('mapping_config', {})
     if isinstance(mapping, str):
@@ -292,9 +304,15 @@ def process_osat_inventory(file_path: str, config: Dict) -> int:
         return 0
 
     # 覆盖旧数据
-    delete_where('inventory', warehouse_type='osat')
+    wn = mapping.get('warehouse_name', '')
+    if wn:
+        delete_where('inventory', warehouse_type='osat', warehouse_name=wn)
 
     batch_id = generate_batch_id()
+    src_email = source_info[0] if source_info else ''
+    src_file = source_info[1] + ' ' + source_info[2] if source_info else ''
+    src_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
     inv_rows = []
     for row in rows:
         device = row.get('device', '')
@@ -307,10 +325,13 @@ def process_osat_inventory(file_path: str, config: Dict) -> int:
             'qty': safe_int(row.get('qty', 0)),
             'bin': b, 'test_program': tp,
             'warehouse_type': 'osat',
-            'warehouse_name': row.get('warehouse_name', ''),
+            'warehouse_name': wn or row.get('warehouse_name', ''),
             'status': '正常',
             'device_prog_bin': dpb,
             'import_batch': batch_id,
+            'source_email': src_email,
+            'source_file': src_file,
+            'source_time': src_time,
         })
     cnt = insert_many('inventory', inv_rows)
     print(f"  ✅ OSAT库存: {cnt} 条")
@@ -467,6 +488,8 @@ def fetch_all(temp_dir: str) -> Dict:
             results[purpose] = 0
             continue
 
+        fp, source_info = file_path[0], file_path[1:]
+
         update('email_config', cfg['id'], {
             'last_fetch': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'version': cfg.get('version', 1)
@@ -474,17 +497,17 @@ def fetch_all(temp_dir: str) -> Dict:
 
         count = 0
         if purpose == 'shipping_detail':
-            count = process_shipping_detail(file_path, cfg)
+            count = process_shipping_detail(fp, cfg, source_info)
         elif purpose == 'osat_inventory':
-            count = process_osat_inventory(file_path, cfg)
+            count = process_osat_inventory(fp, cfg, source_info)
         elif purpose == 'hold_inventory':
-            count = process_hold_inventory(file_path, cfg)
+            count = process_hold_inventory(fp, cfg, source_info)
         elif purpose == 'model_mapping':
-            count = process_model_mapping(file_path, cfg)
+            count = process_model_mapping(fp, cfg, source_info)
         elif purpose == 'mix_bin':
-            count = process_mix_bin(file_path, cfg)
+            count = process_mix_bin(fp, cfg, source_info)
         elif purpose == 'order_allocation':
-            count = process_order_allocation(file_path, cfg)
+            count = process_order_allocation(fp, cfg, source_info)
 
         results[purpose] = count
         try: os.remove(file_path)
