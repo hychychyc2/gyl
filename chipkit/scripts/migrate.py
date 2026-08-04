@@ -217,9 +217,9 @@ def main():
             v = [safe_str(x) for x in row]
             if len(v) < 10: continue
             device = v[19] if len(v) > 19 else ''
-            mark = v[22] if len(v) > 22 else ''
-            b = v[23] if len(v) > 23 else ''
-            tp = v[24] if len(v) > 24 else ''
+            mark = v[11] if len(v) > 11 else ''  # 生产批次
+            b = v[22] if len(v) > 22 else ''  # BIN
+            tp = v[23] if len(v) > 23 else ''  # 程序
             dpb = f"{device}{tp}{b}" if device and tp and b else ''
             all_inv.append({
                 'device': device, 'marking': mark,
@@ -243,23 +243,25 @@ def main():
         for row in ws.iter_rows(min_row=3, values_only=True):
             if not row or not any(row): continue
             v = [safe_str(x) for x in row]
-            if len(v) < 13: continue
-            device = v[19] if len(v) > 19 else ''
-            b = v[18] if len(v) > 18 else ''
-            tp = v[17] if len(v) > 17 else ''
+            if len(v) < 12: continue
+            # QHBS列: 0=org, 1=物料编码, 8=子库存, 11=批次, 12=数量, 13=marking, 15=程序, 16=BIN, 17=device, 19=cooke
+            device = v[17] if len(v) > 17 else ''
+            b = v[16] if len(v) > 16 else ''
+            tp = v[15] if len(v) > 15 else ''
             dpb = f"{device}{tp}{b}" if device and tp and b else ''
             all_inv.append({
-                'device': device, 'marking': v[15] if len(v) > 15 else '',
-                'qty': safe_int(v[13]) if len(v) > 13 else 0,
+                'device': device, 'marking': v[13] if len(v) > 13 else '',
+                'qty': safe_int(v[12]) if len(v) > 12 else 0,
                 'bin': b, 'test_program': tp,
                 'warehouse_type': 'bonded', 'warehouse_name': 'QHBS',
                 'material_code': v[1] if len(v) > 1 else '',
                 'product_desc': v[2] if len(v) > 2 else '',
-                'batch': v[12] if len(v) > 12 else '',
+                'batch': v[11] if len(v) > 11 else '',
                 'sub_inventory': v[8] if len(v) > 8 else '',
                 'location': v[10] if len(v) > 10 else '',
                 'org': v[0] if len(v) > 0 else '',
                 'status': '正常',
+                'remark': v[19] if len(v) > 19 else '',
                 'device_prog_bin': dpb, 'import_batch': 'MIGRATION',
             })
             cnt += 1
