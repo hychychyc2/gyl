@@ -393,15 +393,13 @@ class ChipKitHandler(BaseHTTPRequestHandler):
     def _login_post(self, body):
         email_addr = body.get('email', '')
         password = body.get('password', '')
-        # 查找用户
         user = query('users', where='email=?', params=(email_addr,))
         if not user:
-            return send_json(self, {'ok': False, 'error': '用户不存在'})
+            return send_json(self, {'ok': False, 'error': '用户不存在，请先运行 migrate.py'})
         user = user[0]
         if not user.get('active'):
             return send_json(self, {'ok': False, 'error': '账号已禁用'})
-        # 首次登录或密码匹配
-        if user.get('password_hash') == '' or user.get('password_hash') == password:
+        if user.get('password_hash') == password:
             return send_json(self, {'ok': True, 'user': {'id': user['id'], 'email': user['email'], 'name': user['name'], 'role': user['role']}})
         return send_json(self, {'ok': False, 'error': '密码错误'})
 

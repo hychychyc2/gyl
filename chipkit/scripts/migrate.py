@@ -316,6 +316,21 @@ def main():
     cnt = insert_many('inventory', all_inv)
     print(f"  ✅ 库存总计: {cnt} 条")
 
+    # ========== 默认用户 ==========
+    print("\n📋 创建默认用户...")
+    existing = query('users', where='email=?', params=('yuchuan.he@casue.com',))
+    if not existing:
+        insert('users', {
+            'email': 'yuchuan.he@casue.com',
+            'name': '何宇川',
+            'role': 'admin',
+            'password_hash': 'chipkit2026',
+            'active': 1,
+        })
+        print("  ✅ 管理员: yuchuan.he@casue.com / chipkit2026")
+    else:
+        print("  ⚠️ 用户已存在")
+
     # ========== 汇总 ==========
     print("\n" + "=" * 60)
     print("✅ 迁移完成！数据统计：")
