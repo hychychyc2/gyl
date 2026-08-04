@@ -4,7 +4,7 @@
 """
 import os, sys, re, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
-from database import init_db, insert_many, delete_where, count as get_count, insert
+from database import init_db, insert_many, delete_where, count as get_count, insert, query
 import openpyxl
 
 WORKSPACE = os.path.join(os.path.dirname(__file__), "..", "..")
