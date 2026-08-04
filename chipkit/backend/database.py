@@ -366,6 +366,19 @@ def init_db():
             print(f"SQL error: {e}")
 
     conn.commit()
+
+    # 自动迁移：添加版本更新中新增的列
+    migrations = {
+        'inventory': ['source_email', 'source_file', 'source_time'],
+        'shipping_detail': ['source_email', 'source_file', 'source_time'],
+    }
+    for table, cols in migrations.items():
+        existing = {r['name'] for r in conn.execute(f'PRAGMA table_info({table})').fetchall()}
+        for c in cols:
+            if c not in existing:
+                conn.execute(f'ALTER TABLE {table} ADD COLUMN {c} TEXT DEFAULT ""')
+    conn.commit()
+
     print("✅ 数据库初始化完成")
 
 # ============ 通用 CRUD ============
