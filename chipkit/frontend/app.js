@@ -151,6 +151,7 @@ async function dashboard() {
   const st = el('div', { class: 'stat-row' });
   st.appendChild(el('div', { class: 'stat-item', html: `⏰ 定时采集: <b>每天 9:00 & 21:00</b>` }));
   st.appendChild(el('div', { class: 'stat-item', html: `🔄 <button class="btn btn-o btn-xs" onclick="fetchAllEmails()">手动采集全部</button>` }));
+  st.appendChild(el('div', { class: 'stat-item', html: `📥 <a href="/api/export/excel" class="btn btn-p btn-xs" style="text-decoration:none;color:#fff">导出Excel</a>` }));
   m.appendChild(st);
 }
 

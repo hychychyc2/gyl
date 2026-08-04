@@ -294,8 +294,8 @@ class ChipKitHandler(BaseHTTPRequestHandler):
             return self._users()
         elif path == '/api/logs':
             return self._logs(qs)
-        elif path == '/api/export/':
-            return self._export(path)
+        elif path == '/api/export/excel':
+            return self._export_excel()
         elif path == '/api/raw':
             return self._raw(qs)
         elif path == '/api/email/fetch_all':
@@ -804,6 +804,15 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(rows, f, ensure_ascii=False, indent=2)
         send_file(self, filepath, 'application/json')
+
+    def _export_excel(self):
+        """导出Excel格式"""
+        from export_excel import export_inventory
+        try:
+            filepath = export_inventory()
+            send_file(self, filepath, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        except Exception as e:
+            send_json(self, {'ok': False, 'error': str(e)})
 
     def _raw(self, qs):
         sql = qs.get('sql',[''])[0]
