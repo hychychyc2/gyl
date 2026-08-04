@@ -42,7 +42,7 @@ def export_inventory(filename=None):
                i.device_prog_bin
         FROM inventory i
         LEFT JOIN model_mapping m ON i.device_prog_bin = m.device_prog_bin
-        LEFT JOIN usage_mapping u ON i.device = u.device AND m.model1 = u.model_name
+        LEFT JOIN usage_mapping u ON i.device LIKE u.device || '%' AND m.model1 = u.project
         GROUP BY i.device_prog_bin, i.warehouse_type, i.warehouse_name
         ORDER BY i.warehouse_type, i.device, total_qty DESC
     """)
@@ -134,7 +134,7 @@ def export_inventory(filename=None):
                CASE WHEN u.usage_qty > 0 THEN SUM(i.qty) / u.usage_qty ELSE 0 END as machine_count
         FROM inventory i
         LEFT JOIN model_mapping m ON i.device_prog_bin = m.device_prog_bin
-        LEFT JOIN usage_mapping u ON i.device = u.device AND m.model1 = u.model_name
+        LEFT JOIN usage_mapping u ON i.device LIKE u.device || '%' AND m.model1 = u.project
         WHERE m.model1 != ''
         GROUP BY m.model1, i.device, i.warehouse_type, i.warehouse_name
         ORDER BY m.model1, total_qty DESC

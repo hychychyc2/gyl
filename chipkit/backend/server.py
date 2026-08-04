@@ -478,14 +478,14 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         filter_type = qs.get('warehouse_type', [''])[0]
 
         sql = """
-        SELECT m.model1, m.device, m.device_prog_bin, m.bin, m.test_program,
+        SELECT m.model1, i.device, i.device_prog_bin, i.bin, i.test_program,
                i.warehouse_type, i.warehouse_name,
                SUM(i.qty) as total_qty,
-               u.usage_qty,
-               CASE WHEN u.usage_qty > 0 THEN SUM(i.qty) / u.usage_qty ELSE 0 END as machine_count
+               MAX(u.usage_qty) as usage_qty,
+               CASE WHEN MAX(u.usage_qty) > 0 THEN SUM(i.qty) * 1.0 / MAX(u.usage_qty) ELSE 0 END as machine_count
         FROM model_mapping m
         LEFT JOIN inventory i ON m.device_prog_bin = i.device_prog_bin
-        LEFT JOIN usage_mapping u ON m.device = u.device AND m.model1 = u.model_name
+        LEFT JOIN usage_mapping u ON m.device LIKE u.device || '%' AND m.model1 = u.project
         WHERE m.model1 != '' AND i.qty > 0
         """
         params = []
@@ -519,10 +519,10 @@ class ChipKitHandler(BaseHTTPRequestHandler):
                SUM(i.qty) as total_qty,
                m.model1, m.model2, m.model3,
                u.usage_qty,
-               CASE WHEN u.usage_qty > 0 THEN SUM(i.qty) / u.usage_qty ELSE 0 END as machine_count
+               CASE WHEN u.usage_qty > 0 THEN SUM(i.qty) * 1.0 / u.usage_qty ELSE 0 END as machine_count
         FROM inventory i
         LEFT JOIN model_mapping m ON i.device_prog_bin = m.device_prog_bin
-        LEFT JOIN usage_mapping u ON i.device = u.device AND m.model1 = u.model_name
+        LEFT JOIN usage_mapping u ON m.device LIKE u.device || '%' AND m.model1 = u.project
         {where_clause}
         GROUP BY i.device, i.device_prog_bin, i.warehouse_name, i.warehouse_type
         ORDER BY i.warehouse_type, total_qty DESC
@@ -559,7 +559,7 @@ class ChipKitHandler(BaseHTTPRequestHandler):
                    CASE WHEN u.usage_qty>0 THEN COALESCE(i.total_qty,0)/u.usage_qty ELSE 0 END as machine_count
             FROM model_mapping m
             LEFT JOIN (SELECT device_prog_bin, SUM(qty) as total_qty FROM inventory GROUP BY device_prog_bin) i ON m.device_prog_bin=i.device_prog_bin
-            LEFT JOIN usage_mapping u ON m.device=u.device AND m.model1=u.model_name
+            LEFT JOIN usage_mapping u ON m.device LIKE u.device || '%' AND m.model1 = u.project
             ORDER BY m.device, m.bin LIMIT 500
             """)
             send_json(self, {'ok': True, 'data': rows})
