@@ -518,7 +518,20 @@ async function email() {
   m.innerHTML = '';
   m.appendChild(el('div', { class: 'toolbar' },
     el('h2', {}, '📧 邮件配置'),
-    el('button', { class: 'btn btn-p', onclick: showEmailConfig }, '➕ 新增'),
+    el('div', { class: 'toolbar-act' },
+      el('button', { class: 'btn btn-p', onclick: showEmailConfig }, '➕ 新增'),
+      el('input', { type: 'file', id: 'import-json', accept: '.json', style: 'display:none', onchange: async e => {
+        const f = e.target.files[0]; if (!f) return;
+        const text = await f.text();
+        try {
+          const data = JSON.parse(text);
+          const r = await api('/api/email/import_json', { method: 'POST', body: data });
+          if (r.ok) { toast(`导入成功: ${r.count} 条配置`, 'success'); email(); }
+          else toast('导入失败: ' + r.error, 'error');
+        } catch(err) { toast('JSON格式错误: ' + err.message, 'error'); }
+      } }),
+      el('button', { class: 'btn btn-o', onclick: () => $('#import-json').click() }, '📥 导入JSON'),
+    ),
   ));
 
   const r = await api('/api/email_configs');

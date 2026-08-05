@@ -302,6 +302,8 @@ class ChipKitHandler(BaseHTTPRequestHandler):
             return self._fetch_all()
         elif path == '/api/email/fetch/':
             return self._fetch_one(path)
+        elif path == '/api/email/import_json':
+            return self._import_email_json(body)
 
         # 静态文件
         if path == '/' or path == '/index.html':
@@ -338,6 +340,8 @@ class ChipKitHandler(BaseHTTPRequestHandler):
             return self._auto_plan()
         elif path.startswith('/api/email_configs'):
             return self._email_config_post(path, body)
+        elif path == '/api/email/import_json':
+            return self._import_email_json(body)
         elif path.startswith('/api/mapping/'):
             return self._mapping_post(path, body)
         elif path == '/api/usage':
@@ -703,6 +707,17 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         if total == 0:
             return send_json(self, {'ok': False, 'error': f'采集完成但未获取到数据，请检查邮箱配置和邮件内容'})
         send_json(self, {'ok': True, 'results': results, 'total': total})
+
+    def _import_email_json(self, body):
+        """从JSON批量导入邮件配置"""
+        configs = body if isinstance(body, list) else [body]
+        imported = 0
+        for cfg in configs:
+            if 'password_encrypted' in cfg and cfg['password_encrypted']:
+                cfg['password_encrypted'] = encrypt_password(cfg['password_encrypted'])
+            insert('email_config', cfg)
+            imported += 1
+        return send_json(self, {'ok': True, 'count': imported})
 
     def _fetch_one(self, path):
         rid = int(path.split('/')[-1])
