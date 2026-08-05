@@ -695,14 +695,24 @@ class ChipKitHandler(BaseHTTPRequestHandler):
 
     def _fetch_all(self):
         """手动触发全部采集"""
+        configs = query('email_config', where='active=1')
+        if not configs:
+            return send_json(self, {'ok': False, 'error': '没有配置邮箱，请先在📧邮件配置中添'})
         results = fetch_all(TEMP_DIR)
-        send_json(self, {'ok': True, 'results': results})
+        total = sum(v for v in results.values() if v)
+        if total == 0:
+            return send_json(self, {'ok': False, 'error': f'采集完成但未获取到数据，请检查邮箱配置和邮件内容'})
+        send_json(self, {'ok': True, 'results': results, 'total': total})
 
     def _fetch_one(self, path):
         rid = int(path.split('/')[-1])
         cfg = dict(query('email_config', where='id=?', params=(rid,))[0])
-        fp = download_email_attachments(cfg, TEMP_DIR)
-        if not fp: return send_json(self, {'ok': False, 'error': '未找到附件'})
+        if not cfg.get('account'):
+            return send_json(self, {'ok': False, 'error': '邮箱配置不完整，请填写邮箱账号密码'})
+        result = download_email_attachments(cfg, TEMP_DIR)
+        if not result:
+            return send_json(self, {'ok': False, 'error': '未找到匹配附件。请检查：1)邮箱密码是否正确 2)匹配关键词是否匹配 3)附件后缀是否正确'})
+        fp, source_info = result[0], result[1:]
         count = 0
         p = cfg.get('purpose','')
         if p == 'shipping_detail': count = process_shipping_detail(fp, cfg)
