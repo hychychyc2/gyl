@@ -371,6 +371,7 @@ def init_db():
     migrations = {
         'inventory': ['source_email', 'source_file', 'source_time'],
         'shipping_detail': ['source_email', 'source_file', 'source_time'],
+        'email_config': ['search_days'],
     }
     for table, cols in migrations.items():
         existing = {r['name'] for r in conn.execute(f'PRAGMA table_info({table})').fetchall()}
