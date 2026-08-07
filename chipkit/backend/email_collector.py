@@ -97,14 +97,32 @@ def download_email_attachments(config: Dict, temp_dir: str) -> Optional[tuple]:
         criteria = f'(SINCE "{get_imap_date_str(datetime(month_ago.year, month_ago.month, month_ago.day))}")'
         print(f"  🔍 搜索条件: {criteria}")
 
+        # IMAP 中文文件夹名需要 UTF-7 编码
         try:
-            mail.select(f'"{root_folder}"', readonly=True)
+            if any(ord(c) > 127 for c in root_folder):
+                # 转成 IMAP UTF-7
+                encoded_folder = root_folder.encode('utf-7').decode('ascii')
+                mail.select(f'"{encoded_folder}"', readonly=True)
+            else:
+                mail.select(f'"{root_folder}"', readonly=True)
             print(f"  📁 文件夹: {root_folder}")
         except Exception as e:
-            print(f"  ⚠️ 文件夹 {root_folder} 失败: {e}, 尝试 INBOX")
+            print(f"  ⚠️ 文件夹 {root_folder} 失败: {e}")
+            # 尝试列出所有文件夹
+            try:
+                status, folder_list = mail.list()
+                if status == 'OK':
+                    print(f"  📂 可用文件夹:")
+                    for f in folder_list:
+                        if f:
+                            fname = f.decode('utf-7', errors='ignore') if isinstance(f, bytes) else str(f)
+                            print(f"     {fname[:80]}")
+            except:
+                pass
+            # Fallback 到 INBOX
             try:
                 mail.select('INBOX', readonly=True)
-                print(f"  📁 使用 INBOX")
+                print(f"  📁 Fallback 使用 INBOX")
             except Exception as e2:
                 print(f"  ❌ INBOX 也失败: {e2}")
                 mail.close(); mail.logout()

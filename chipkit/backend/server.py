@@ -363,7 +363,14 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         elif path.startswith('/api/usage/'):
             return self._usage_put(path, body)
         elif path.startswith('/api/email_configs/'):
-            return self._update(path, body)
+            # /api/email_configs/{id}
+            parts = path.split('/')
+            if len(parts) >= 4 and parts[3].isdigit():
+                ok = update('email_config', int(parts[3]), body)
+                send_json(self, {'ok': ok})
+            else:
+                send_json(self, {'ok': False, 'error': 'Invalid id'})
+            return
 
         send_json(self, {'ok': False, 'error': 'Unknown route'}, 404)
 
