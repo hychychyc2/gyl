@@ -126,12 +126,10 @@ def download_email_attachments(config: Dict, temp_dir: str) -> Optional[tuple]:
         mail.login(account, password)
         print(f"  ✅ 登录成功")
 
-        # 搜索指定天数内的邮件
-        search_days = config.get('search_days', 7)
+        # 搜索当天邮件（和V8.py完全一致）
         today = datetime.now().date()
-        since_date = today - timedelta(days=search_days)
-        criteria = f'SINCE "{get_imap_date_str(datetime(since_date.year, since_date.month, since_date.day))}"'
-        print(f"  🔍 搜索最近{search_days}天邮件")
+        tomorrow = today + timedelta(days=1)
+        criteria = f'SINCE "{get_imap_date_str(datetime(today.year, today.month, today.day))}" BEFORE "{get_imap_date_str(datetime(tomorrow.year, tomorrow.month, tomorrow.day))}"'
         print(f"  🔍 搜索条件: {criteria}")
 
         # 选择文件夹：用 IMAP UTF-7 编码处理中文文件夹名
