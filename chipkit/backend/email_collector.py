@@ -97,44 +97,14 @@ def download_email_attachments(config: Dict, temp_dir: str) -> Optional[tuple]:
         criteria = f'(SINCE "{get_imap_date_str(datetime(month_ago.year, month_ago.month, month_ago.day))}")'
         print(f"  🔍 搜索条件: {criteria}")
 
-        # 尝试选择文件夹：先列出所有文件夹，匹配名称
-        selected = False
+        # 直接使用 INBOX，避免中文文件夹编码问题
         try:
-            status, folder_list = mail.list()
-            if status == 'OK':
-                for f in folder_list:
-                    if f:
-                        fname = f.decode('utf-7', errors='ignore') if isinstance(f, bytes) else str(f)
-                        # 提取文件夹名（去掉 flags 和分隔符）
-                        parts = fname.split(' "/" ')
-                        if len(parts) > 1:
-                            actual_name = parts[1].strip('"')
-                        else:
-                            actual_name = fname.split(') ')[-1].strip('"') if ') ' in fname else fname
-                        if root_folder in actual_name or actual_name.endswith(root_folder.split('/')[-1]):
-                            # 找到了，用原始列表中的名称 select
-                            raw_name = f.decode('latin-1') if isinstance(f, bytes) else f
-                            raw_parts = raw_name.split(' "/" ')
-                            folder_to_select = raw_parts[1].strip('"') if len(raw_parts) > 1 else actual_name
-                            mail.select(f'"{folder_to_select}"', readonly=True)
-                            print(f"  📁 文件夹: {actual_name}")
-                            selected = True
-                            break
-                if not selected:
-                    print(f"  ⚠️ 未找到文件夹 {root_folder}")
+            mail.select('INBOX', readonly=True)
+            print(f"  📁 使用 INBOX")
         except Exception as e:
-            print(f"  ⚠️ 列出文件夹失败: {e}")
-
-        # Fallback 到 INBOX
-        if not selected:
-            try:
-                mail.select('INBOX', readonly=True)
-                print(f"  📁 使用 INBOX")
-                selected = True
-            except Exception as e2:
-                print(f"  ❌ INBOX 也失败: {e2}")
-                mail.close(); mail.logout()
-                return None
+            print(f"  ❌ INBOX 失败: {e}")
+            mail.close(); mail.logout()
+            return None
 
         status, messages = mail.search(None, criteria)
         if status != 'OK' or not messages[0]:
