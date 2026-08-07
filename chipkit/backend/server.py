@@ -678,12 +678,16 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         send_json(self, {'ok': True, 'data': rows})
 
     def _email_config_post(self, path, body):
-        if len(path.split('/')) > 3:
-            # /api/email_configs/{id}/fetch
-            rid = int(path.split('/')[2])
+        parts = path.split('/')
+        # /api/email_configs/{id}/fetch
+        if len(parts) >= 5 and parts[4] == 'fetch':
+            rid = int(parts[3])
             cfg = dict(query('email_config', where='id=?', params=(rid,))[0])
+            if not cfg.get('account'):
+                return send_json(self, {'ok': False, 'error': '邮箱配置不完整'})
             result = download_email_attachments(cfg, TEMP_DIR)
-            if not result: return send_json(self, {'ok': False, 'error': '未找到附件'})
+            if not result:
+                return send_json(self, {'ok': False, 'error': '未找到匹配附件'})
             fp, source_info = result[0], result[1:]
             count = 0
             p = cfg.get('purpose','')
@@ -697,8 +701,8 @@ class ChipKitHandler(BaseHTTPRequestHandler):
             try: os.remove(fp)
             except: pass
             return send_json(self, {'ok': True, 'count': count})
+        # /api/email_configs 新增
         else:
-            # 新增配置，加密密码
             if 'password_encrypted' in body and body['password_encrypted'] and body['password_encrypted'] != '********':
                 body['password_encrypted'] = encrypt_password(body['password_encrypted'])
             rid = insert('email_config', body)
