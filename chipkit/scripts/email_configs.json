@@ -65,7 +65,7 @@
     "root_folder": "INBOX/系统邮件",
     "match_key": "JSCC",
     "suffix": ".xlsx",
-    "mapping_config": "{\"sheet\":\"Sheet1\",\"header_row\":1,\"col_mapping\":{\"entity\":\"A\",\"ship_date\":\"B\",\"device_pn\":\"C\",\"wafer_lot_id\":\"D\",\"marking\":\"E\",\"good_qty\":\"F\",\"bin\":\"G\",\"invoice_no\":\"H\",\"test_program\":\"I\",\"osat\":\"J\",\"ship_to\":\"K\",\"test_wo\":\"L\"}}",
+    "mapping_config": "{\"sheet\": \"Sheet1\", \"header_row\": 1, \"col_mapping\": {\"device_pn\": \"Product\", \"wafer_lot_id\": \"Wafer_lot\", \"marking\": \"Marking\", \"test_program\": \"FT_PROGRAM\", \"bin\": \"BIN\", \"good_qty\": \"Qty\", \"invoice_no\": \"ABI_NO\", \"ship_date\": \"ABI_DATE\", \"entity\": \"STAGE\", \"osat\": \"CUST_DEVICE\", \"lot_id\": \"LOT_ID\", \"factory\": \"FACTORY\"}}",
     "search_days": 30,
     "active": 1
   },
@@ -107,7 +107,7 @@
     "root_folder": "INBOX/系统邮件",
     "match_key": "SPILSZ onhand report",
     "suffix": ".xlsx",
-    "mapping_config": "{\"sheet\":\"Sheet1\",\"header_row\":1,\"warehouse_name\":\"SPILSZ\",\"col_mapping\":{\"device\":\"D\",\"marking\":\"F\",\"qty\":\"K\",\"bin\":\"J\",\"test_program\":\"I\"}}",
+    "mapping_config": "{\"sheet\": \"Sheet2\", \"header_row\": 1, \"col_mapping\": {\"device\": \"DEVICE\", \"marking\": \"CUST_LOT_NO\", \"qty\": \"QTY\", \"bin\": \"BIN\", \"test_program\": \"TEST_PGM\", \"lot_no\": \"LOT_NO\", \"process\": \"PROCESS\", \"branch\": \"BRANCH_NAME\", \"cust_no\": \"CUST_NO\", \"cust_po_no\": \"CUST_PO_NO\", \"lot_type\": \"LOT_TYPE\"}}",
     "search_days": 30,
     "active": 1
   },

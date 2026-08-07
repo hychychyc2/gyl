@@ -260,12 +260,19 @@ def parse_excel(file_path: str, sheet_name: str = None, header_row: int = 1,
             col_indexes = {}
             for target_col, source_col in col_mapping.items():
                 try:
+                    # 尝试数字列号
                     col_indexes[target_col] = int(source_col)
                 except:
-                    for idx, name in headers.items():
-                        if name == source_col:
-                            col_indexes[target_col] = idx
-                            break
+                    # 尝试字母列号 (A=1, B=2, ...)
+                    if isinstance(source_col, str) and len(source_col) == 1 and source_col.isalpha():
+                        col_idx = ord(source_col.upper()) - ord('A') + 1
+                        col_indexes[target_col] = col_idx
+                    else:
+                        # 按表头名匹配
+                        for idx, name in headers.items():
+                            if name == source_col:
+                                col_indexes[target_col] = idx
+                                break
             if not col_indexes:
                 col_indexes = {str(k): k for k in headers}
         else:
