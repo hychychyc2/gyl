@@ -226,7 +226,7 @@ def parse_excel(file_path: str, sheet_name: str = None, header_row: int = 1,
 
     try:
         if fmt == 'xlsx':
-            wb = openpyxl.load_workbook(file_path, data_only=True, read_only=True)
+            wb = openpyxl.load_workbook(file_path, data_only=True)
             if sheet_name and sheet_name in wb.sheetnames:
                 ws = wb[sheet_name]
             else:
@@ -280,21 +280,24 @@ def parse_excel(file_path: str, sheet_name: str = None, header_row: int = 1,
 
         # 读数据
         rows = []
-        for row_num in range(header_row + 1, max_row + 1):
-            row_data = {}
-            if fmt == 'xlsx':
+        if fmt == 'xlsx':
+            for row_num in range(header_row + 1, max_row + 1):
+                row_data = {}
                 for target_col, col_idx in col_indexes.items():
                     val = ws.cell(row=row_num, column=col_idx).value
                     row_data[target_col] = clean_text(val) if val is not None else ''
-            else:
+                if any(v for v in row_data.values()):
+                    rows.append(row_data)
+        else:
+            for row_num in range(header_row + 1, max_row + 1):
+                row_data = {}
                 for target_col, col_idx in col_indexes.items():
                     col_0 = col_idx - 1
                     if col_0 < max_col_real:
                         val = ws.cell_value(row_num - 1, col_0)
                         row_data[target_col] = clean_text(val) if val is not None else ''
-
-            if any(v for v in row_data.values()):
-                rows.append(row_data)
+                if any(v for v in row_data.values()):
+                    rows.append(row_data)
 
         wb.close()
         return rows
