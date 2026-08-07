@@ -133,47 +133,64 @@ def download_email_attachments(config: Dict, temp_dir: str) -> Optional[tuple]:
         print(f"  🔍 搜索条件: {criteria}")
 
         # 选择文件夹：用 IMAP UTF-7 编码处理中文文件夹名
+        # 先列出所有子文件夹
+        encoded_root = imap_utf7_encode(root_folder)
+        sub_folders = [encoded_root]
+        
         try:
-            encoded_name = imap_utf7_encode(root_folder)
-            mail.select(f'"{encoded_name}"', readonly=True)
-            print(f"  📁 文件夹: {root_folder}")
+            status, folder_list = mail.list()
+            if status == 'OK':
+                for f in folder_list:
+                    if f:
+                        fname = f.decode('latin-1') if isinstance(f, bytes) else str(f)
+                        # 提取文件夹路径
+                        parts = fname.split(' "/" ')
+                        if len(parts) > 1:
+                            folder_path = parts[1].strip('"')
+                            if folder_path.startswith(encoded_root + '/') and folder_path != encoded_root:
+                                sub_folders.append(folder_path)
         except Exception as e:
-            print(f"  ⚠️ 文件夹 {root_folder} 失败: {e}")
-            try:
-                mail.select('INBOX', readonly=True)
-                print(f"  📁 Fallback INBOX")
-            except:
-                mail.close(); mail.logout()
-                return None
+            print(f"  ⚠️ 列出子文件夹失败: {e}")
+        
+        print(f"  📁 搜索 {len(sub_folders)} 个文件夹")
 
-        status, messages = mail.search(None, criteria)
-        if status != 'OK' or not messages[0]:
-            print(f"  ⚠️ 当天无邮件 (status={status})")
-            mail.close(); mail.logout()
-            return None
-
-        email_ids = messages[0].split()
-        print(f"  📬 找到 {len(email_ids)} 封邮件")
         all_attachments = []
-
-        for eid in reversed(email_ids):
+        for folder_name in sub_folders:
             try:
-                status, msg_data = mail.fetch(eid, '(RFC822)')
-                if status != 'OK': continue
-                msg = email.message_from_bytes(msg_data[0][1])
-                subject = decode_email_header(msg['Subject'])
+                mail.select(f'"{folder_name}"', readonly=True)
+            except:
+                continue
+            
+            status, messages = mail.search(None, criteria)
+            if status != 'OK' or not messages[0]:
+                continue
 
-                for part in msg.walk():
-                    if part.get_content_maintype() == 'multipart': continue
-                    if not part.get('Content-Disposition'): continue
-                    filename = decode_email_header(part.get_filename())
-                    if not filename: continue
-                    if not filename.lower().endswith(suffix.lower()): continue
-                    if match_key and match_key not in filename: continue
+            email_ids = messages[0].split()
+            print(f"  📁 {folder_name.replace(encoded_root, '') or '/'}: {len(email_ids)} 封邮件")
 
-                    payload = part.get_payload(decode=True)
-                    all_attachments.append((filename, payload, subject))
-                    print(f"  📎 找到: {filename}")
+            for eid in reversed(email_ids[:50]):  # 每个文件夹最多处理50封
+                try:
+                    status, msg_data = mail.fetch(eid, '(RFC822)')
+                    if status != 'OK': continue
+                    msg = email.message_from_bytes(msg_data[0][1])
+                    subject = decode_email_header(msg['Subject'])
+
+                    for part in msg.walk():
+                        if part.get_content_maintype() == 'multipart': continue
+                        if not part.get('Content-Disposition'): continue
+                        filename = decode_email_header(part.get_filename())
+                        if not filename: continue
+                        if not filename.lower().endswith(suffix.lower()): continue
+                        if match_key and match_key not in filename: continue
+
+                        payload = part.get_payload(decode=True)
+                        all_attachments.append((filename, payload, subject))
+                        print(f"  📎 找到: {filename}")
+                except Exception as e:
+                    continue
+
+            if all_attachments:
+                break  # 找到附件了就停止
             except Exception as e:
                 print(f"  ⚠️ 邮件解析错误: {e}")
 
