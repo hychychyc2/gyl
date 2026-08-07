@@ -156,10 +156,18 @@ async function dashboard() {
 }
 
 async function fetchAllEmails() {
-  toast('开始采集...', 'info');
+  toast('📧 开始采集...', 'info');
   const r = await api('/api/email/fetch_all');
-  if (r.ok) toast('采集完成', 'success');
-  else toast('采集失败: ' + r.error, 'error');
+  if (r.ok) {
+    let msg = `✅ 采集完成，共 ${r.total} 条`;
+    if (r.results) {
+      const details = Object.entries(r.results).filter(([,v]) => v > 0).map(([k,v]) => `${k}: ${v}条`).join('，');
+      if (details) msg += ` (${details})`;
+    }
+    toast(msg, 'success');
+    // 刷新相关页面
+    renderCurrentPage();
+  } else toast('采集失败: ' + r.error, 'error');
 }
 
 // ============ 库存总览 ============
@@ -546,10 +554,10 @@ async function email() {
         ),
         el('div', { style: { display: 'flex', gap: '6px' } },
           el('button', { class: 'btn btn-o btn-sm', onclick: async () => {
-            toast('开始采集...', 'info');
+            toast('📧 采集 ' + row.description + '...', 'info');
             const r = await api(`/api/email_configs/${row.id}/fetch`, { method: 'POST' });
-            if (r.ok) toast(`采集: ${r.count} 条`, 'success');
-            else toast('失败: ' + r.error, 'error');
+            if (r.ok) toast(`✅ ${r.count}条 | 📎 ${r.file || ''} | 📨 ${r.source || ''}`, 'success');
+            else toast('❌ ' + (r.error || '失败'), 'error');
           } }, '🔄 采集'),
           el('button', { class: 'btn btn-o btn-sm', onclick: () => editEmailConfig(row) }, '✏️ 编辑'),
           el('button', { class: 'btn btn-d btn-sm', onclick: async () => {

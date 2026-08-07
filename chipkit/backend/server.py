@@ -700,7 +700,7 @@ class ChipKitHandler(BaseHTTPRequestHandler):
             update('email_config', rid, {'last_fetch': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'version': cfg.get('version',1)})
             try: os.remove(fp)
             except: pass
-            return send_json(self, {'ok': True, 'count': count})
+            return send_json(self, {'ok': True, 'count': count, 'source': source_info[0] if len(source_info) > 0 else '', 'file': os.path.basename(fp), 'purpose': p})
         # /api/email_configs 新增
         else:
             if 'password_encrypted' in body and body['password_encrypted'] and body['password_encrypted'] != '********':
@@ -743,7 +743,7 @@ class ChipKitHandler(BaseHTTPRequestHandler):
         p = cfg.get('purpose','')
         if p == 'shipping_detail': count = process_shipping_detail(fp, cfg)
         elif p == 'osat_inventory': count = process_osat_inventory(fp, cfg)
-        elif p == 'hold_inventory': count = process_hold_inventory(fp, cfg)
+        elif p == 'hold_inventory': count = process_hold_inventory(fp, cfg, source_info)
         elif p == 'model_mapping': count = process_model_mapping(fp, cfg)
         elif p == 'mix_bin': count = process_mix_bin(fp, cfg)
         elif p == 'order_allocation': count = process_order_allocation(fp, cfg)

@@ -370,8 +370,8 @@ def process_osat_inventory(file_path: str, config: Dict, source_info: tuple = No
         print("  ⚠️ OSAT库存解析为空")
         return 0
 
-    # 覆盖旧数据
-    wn = mapping.get('warehouse_name', '')
+    # 从描述中提取仓库名
+    wn = mapping.get('warehouse_name', '') or config.get('description', '').replace('库存', '').replace('出货明细', '').strip()
     if wn:
         delete_where('inventory', warehouse_type='osat', warehouse_name=wn)
 
@@ -404,15 +404,31 @@ def process_osat_inventory(file_path: str, config: Dict, source_info: tuple = No
     print(f"  ✅ OSAT库存: {cnt} 条")
     return cnt
 
-def process_hold_inventory(file_path: str, config: Dict) -> int:
+def process_hold_inventory(file_path: str, config: Dict, source_info: tuple = None) -> int:
     """处理Hold库存"""
-    rows = parse_excel(file_path, header_row=2)
+    mapping = config.get('mapping_config', {})
+    if isinstance(mapping, str):
+        mapping = json.loads(mapping)
+
+    rows = parse_excel(
+        file_path,
+        sheet_name=mapping.get('sheet', ''),
+        header_row=mapping.get('header_row', 2),
+        col_mapping=mapping.get('col_mapping', {})
+    )
     if not rows:
         return 0
 
-    delete_where('inventory', warehouse_type='hold')
+    # 从描述中提取仓库名
+    wn = mapping.get('warehouse_name', '') or config.get('description', '').replace('Hold库存', '').replace('库存', '').strip()
+    if wn:
+        delete_where('inventory', warehouse_type='hold', warehouse_name=wn)
 
     batch_id = generate_batch_id()
+    src_email = source_info[0] if source_info else ''
+    src_file = source_info[1] + ' ' + source_info[2] if source_info else ''
+    src_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
     inv_rows = []
     for row in rows:
         device = row.get('device', '')
@@ -424,10 +440,13 @@ def process_hold_inventory(file_path: str, config: Dict) -> int:
             'qty': safe_int(row.get('qty', 0)),
             'bin': b, 'test_program': tp,
             'warehouse_type': 'hold',
-            'warehouse_name': row.get('warehouse_name', ''),
+            'warehouse_name': wn or row.get('warehouse_name', ''),
             'status': 'hold',
             'device_prog_bin': dpb,
             'import_batch': batch_id,
+            'source_email': src_email,
+            'source_file': src_file,
+            'source_time': src_time,
         })
     cnt = insert_many('inventory', inv_rows)
     print(f"  ✅ Hold库存: {cnt} 条")
