@@ -191,8 +191,6 @@ def download_email_attachments(config: Dict, temp_dir: str) -> Optional[tuple]:
 
             if all_attachments:
                 break  # 找到附件了就停止
-            except Exception as e:
-                print(f"  ⚠️ 邮件解析错误: {e}")
 
         mail.close(); mail.logout()
 
