@@ -70,6 +70,41 @@ def get_imap_date_str(d: datetime) -> str:
               'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     return f"{d.day:02d}-{months[d.month-1]}-{d.year}"
 
+def imap_utf7_decode(s: str) -> str:
+    """IMAP UTF-7 解码"""
+    if not s or "&" not in s:
+        return s
+    pattern = re.compile(r'&([^-]+)-')
+    def decode_match(match):
+        encoded_part = match.group(1).replace(",", "/")
+        if not encoded_part:
+            return "&"
+        try:
+            return base64.b64decode(encoded_part + "==", altchars=b"+/").decode("utf-16be")
+        except:
+            return match.group(0)
+    return pattern.sub(decode_match, s)
+
+def imap_utf7_encode(s: str) -> str:
+    """IMAP UTF-7 编码"""
+    if not s or all(ord(c) < 128 for c in s):
+        return s
+    result = []
+    buffer = []
+    for c in s:
+        if ord(c) < 128:
+            if buffer:
+                b64 = base64.b64encode(''.join(buffer).encode("utf-16be")).decode("ascii").rstrip("=").replace("/", ",")
+                result.append(f"&{b64}-")
+                buffer = []
+            result.append(c)
+        else:
+            buffer.append(c)
+    if buffer:
+        b64 = base64.b64encode(''.join(buffer).encode("utf-16be")).decode("ascii").rstrip("=").replace("/", ",")
+        result.append(f"&{b64}-")
+    return ''.join(result)
+
 # ============ 邮件下载 ============
 def download_email_attachments(config: Dict, temp_dir: str) -> Optional[tuple]:
     """从邮箱下载匹配的附件，返回 (文件路径, 发件人, 邮件主题, 邮件日期)"""
@@ -97,14 +132,19 @@ def download_email_attachments(config: Dict, temp_dir: str) -> Optional[tuple]:
         criteria = f'(SINCE "{get_imap_date_str(datetime(month_ago.year, month_ago.month, month_ago.day))}")'
         print(f"  🔍 搜索条件: {criteria}")
 
-        # 直接使用 INBOX，避免中文文件夹编码问题
+        # 选择文件夹：用 IMAP UTF-7 编码处理中文文件夹名
         try:
-            mail.select('INBOX', readonly=True)
-            print(f"  📁 使用 INBOX")
+            encoded_name = imap_utf7_encode(root_folder)
+            mail.select(f'"{encoded_name}"', readonly=True)
+            print(f"  📁 文件夹: {root_folder}")
         except Exception as e:
-            print(f"  ❌ INBOX 失败: {e}")
-            mail.close(); mail.logout()
-            return None
+            print(f"  ⚠️ 文件夹 {root_folder} 失败: {e}")
+            try:
+                mail.select('INBOX', readonly=True)
+                print(f"  📁 Fallback INBOX")
+            except:
+                mail.close(); mail.logout()
+                return None
 
         status, messages = mail.search(None, criteria)
         if status != 'OK' or not messages[0]:
