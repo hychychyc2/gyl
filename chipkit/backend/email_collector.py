@@ -126,10 +126,10 @@ def download_email_attachments(config: Dict, temp_dir: str) -> Optional[tuple]:
         mail.login(account, password)
         print(f"  ✅ 登录成功")
 
-        # 搜索最近30天的邮件
+        # 搜索当天的邮件
         today = datetime.now().date()
-        month_ago = today - timedelta(days=30)
-        criteria = f'(SINCE "{get_imap_date_str(datetime(month_ago.year, month_ago.month, month_ago.day))}")'
+        tomorrow = today + timedelta(days=1)
+        criteria = f'SINCE "{get_imap_date_str(datetime(today.year, today.month, today.day))}" BEFORE "{get_imap_date_str(datetime(tomorrow.year, tomorrow.month, tomorrow.day))}"'
         print(f"  🔍 搜索条件: {criteria}")
 
         # 选择文件夹：用 IMAP UTF-7 编码处理中文文件夹名
@@ -148,7 +148,7 @@ def download_email_attachments(config: Dict, temp_dir: str) -> Optional[tuple]:
 
         status, messages = mail.search(None, criteria)
         if status != 'OK' or not messages[0]:
-            print(f"  ⚠️ 未找到匹配邮件 (status={status})")
+            print(f"  ⚠️ 当天无邮件 (status={status})")
             mail.close(); mail.logout()
             return None
 
