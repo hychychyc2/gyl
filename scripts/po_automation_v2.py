@@ -546,17 +546,13 @@ def parse_overseas_from_email(body, subject, attachments=None):
     items = []
     seen = {}
     
-    # 1. 从正文提取 BM 型号+数量
-    patterns = [
-        r'(BM\d{4}[A-Z]{0,3}[\+\w]*)\s*[:\s]\s*(\d+)\s*(?:pcs|PCS|个|片)?',
-        r'(BM\d{4}[A-Z]{0,3}[\+\w]*)\s+(\d{3,})',
-    ]
-    for pat in patterns:
-        for m in re.findall(pat, body, re.IGNORECASE):
-            model = m[0].upper().strip()
-            qty = int(m[1])
-            if model not in seen or qty > seen[model]:
-                seen[model] = qty
+    # 1. 从正文提取 BM 型号+数量（累加同型号多行）
+    # 使用单一pattern，避免重复匹配
+    pattern = r'(BM\d{4}[A-Z]{0,3}[\+\w]*)\s+(\d{3,})\s*(?:pcs|PCS|个|片)?'
+    for m in re.finditer(pattern, body, re.IGNORECASE):
+        model = m.group(1).upper().strip()
+        qty = int(m.group(2))
+        seen[model] = seen.get(model, 0) + qty
 
     # 解析目的地
     destination = ""
