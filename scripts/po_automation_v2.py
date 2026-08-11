@@ -611,29 +611,45 @@ def parse_overseas_from_email(body, subject, attachments=None):
             try:
                 att_wb = load_workbook(att, data_only=True)
                 for sn in att_wb.sheetnames:
-                    if '发票' not in sn and '箱单' not in sn:
+                    if '发票' not in sn and '箱单' not in sn and '出货' not in sn:
                         continue
                     ws = att_wb[sn]
-                    for r in range(1, ws.max_row + 1):
-                        for c in range(1, min(ws.max_column + 1, 12)):
-                            val = str(ws.cell(row=r, column=c).value or '')
-                            bm = re.search(r'(BM\d{4}[A-Z]{0,3})', val)
-                            if bm:
+                    # 先检查表头，判断格式
+                    header = [str(ws.cell(row=1, column=c).value or '') for c in range(1, min(ws.max_column + 1, 8))]
+                    # 格式1：发票号/型号/数量/件数（JSCC格式）
+                    if any('型号' in h for h in header) and any('数量' in h for h in header):
+                        model_col = next((c for c, h in enumerate(header, 1) if '型号' in h), -1)
+                        qty_col = next((c for c, h in enumerate(header, 1) if '数量' in h), -1)
+                        if model_col > 0 and qty_col > 0:
+                            for r in range(2, ws.max_row + 1):
+                                model_val = str(ws.cell(row=r, column=model_col).value or '').strip()
+                                bm = re.search(r'(BM\d{4}[A-Z]{0,3})', model_val, re.IGNORECASE)
+                                if not bm:
+                                    continue
                                 model = bm.group(1).upper().strip()
-                                # 找同一行的数量
-                                for c2 in range(c + 1, min(ws.max_column + 1, c + 6)):
-                                    qty_val = ws.cell(row=r, column=c2).value
-                                    if qty_val and isinstance(qty_val, (int, float)) and qty_val > 100:
-                                        # 确认是数量（不是价格）
-                                        if model not in seen or int(qty_val) > seen[model]:
-                                            seen[model] = int(qty_val)
-                            # Also try TOTAL row
-                            if 'TOTAL' in val.upper() and not seen:
-                                for c3 in range(1, c):
-                                    prev = str(ws.cell(row=r-2, column=c3).value or '')
-                                    if not seen:
-                                        # Look at rows above for model
-                                        pass
+                                qty_val = ws.cell(row=r, column=qty_col).value
+                                try:
+                                    qty = int(qty_val)
+                                    if qty > 0:
+                                        seen[model] = seen.get(model, 0) + qty
+                                        print(f"    附件: {model} +{qty}")
+                                except:
+                                    pass
+                        if seen:
+                            break
+                    # 格式2：任意cell遍历找BM型号+相邻数量
+                    if not seen:
+                        for r in range(1, ws.max_row + 1):
+                            for c in range(1, min(ws.max_column + 1, 12)):
+                                val = str(ws.cell(row=r, column=c).value or '')
+                                bm = re.search(r'(BM\d{4}[A-Z]{0,3})', val)
+                                if bm:
+                                    model = bm.group(1).upper().strip()
+                                    for c2 in range(c + 1, min(ws.max_column + 1, c + 6)):
+                                        qty_val = ws.cell(row=r, column=c2).value
+                                        if qty_val and isinstance(qty_val, (int, float)) and int(qty_val) > 0:
+                                            seen[model] = seen.get(model, 0) + int(qty_val)
+                                            break
                 att_wb.close()
                 if seen:
                     break
