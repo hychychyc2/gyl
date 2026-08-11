@@ -37,6 +37,10 @@ QIANHAI_CC = ["yisheng.chen@cbscs.com", "feng.rongkuan@hkyhg.com", "long.sh@hkyh
               "yhg_service1@hkyhg.com", "xu.miao@cbscs.com", "kang.he@casue.com", "chunmiao.fu_w@casue.com",
               "lili_w@casue.com", "jiahuan.liu@casue.com", "ying.zhang02@casue.com", "yuanqin.zhu@casue.com", "log@casue.com"]
 
+HK_TO = ["xue.guofeng@hkyhg.com", "yhg_service1@hkyhg.com", "long.sh@hkyhg.com"]
+HK_CC = ["na.yang_w@casue.com", "kang.he@casue.com", "chunmiao.fu_w@casue.com",
+          "lili_w@casue.com", "jiahuan.liu@casue.com", "ying.zhang02@casue.com", "log@casue.com"]
+
 # ==================== 数据 (动态从邮件获取) ====================
 DOMESTIC_ITEMS = []
 DOMESTIC_MERGED = []
@@ -1678,6 +1682,87 @@ def send_qianhai_report():
     
     print(f"  前海报告发送成功! (收件人: {len(QIANHAI_TO)}人, 抄送: {len(QIANHAI_CC)}人)")
 
+def send_hk_report():
+    """发送香港仓库采购订单邮件，HTML表格格式，跟前海一样"""
+    hk_items = [item for item in OVERSEAS_ITEMS if item.get('destination') == '香港香远仓库']
+    if not hk_items:
+        return
+    
+    print(f"=== 发送香港仓库报告 ===")
+    
+    msg = MIMEMultipart('alternative')
+    msg['From'] = formataddr(("采购PO自动化", EMAIL_ACCOUNT))
+    msg['To'] = ", ".join(HK_TO)
+    msg['Cc'] = ", ".join(HK_CC)
+    msg['Date'] = email_lib.utils.formatdate(localtime=True)
+    msg['Subject'] = Header(f"香港仓库采购订单_{TODAY}", 'utf-8')
+    
+    html = f"""\
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+<p>您好，</p>
+<p>以下为{TODAY}香港仓库采购订单：</p>
+<table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse; font-size:12px; font-family:Arial, sans-serif;">
+  <tr style="background-color:#4472C4; color:#ffffff; text-align:center;">
+    <th>序号</th>
+    <th>采购主体</th>
+    <th>出货日期</th>
+    <th>销售主体</th>
+    <th>协议</th>
+    <th>供应商</th>
+    <th>型号</th>
+    <th>数量</th>
+    <th>单位</th>
+    <th>物料编码</th>
+    <th>PO号</th>
+  </tr>
+"""
+    for i, item in enumerate(hk_items):
+        seq = str(i + 1)
+        entity = "深圳世纪云芯"
+        date = item.get('date', TODAY)
+        dest = "香港香远仓库"
+        agreement = "区间结转"
+        supplier = item.get('supplier', '')
+        model = item['model']
+        qty = str(item['qty'])
+        unit = "PCS"
+        code = item.get('material_code', '')
+        po = item['po']
+        html += f"""\
+  <tr style="text-align:center;">
+    <td>{seq}</td>
+    <td>{entity}</td>
+    <td>{date}</td>
+    <td>{dest}</td>
+    <td>{agreement}</td>
+    <td>{supplier}</td>
+    <td>{model}</td>
+    <td style="text-align:right;">{qty}</td>
+    <td>{unit}</td>
+    <td>{code}</td>
+    <td>{po}</td>
+  </tr>
+"""
+    html += """\
+</table>
+<br/>
+<p>谢谢！</p>
+</body>
+</html>"""
+    
+    msg.attach(MIMEText(html, 'html', 'utf-8'))
+    
+    all_recipients = HK_TO + HK_CC
+    server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+    server.starttls()
+    server.login(EMAIL_ACCOUNT, EMAIL_PASSWORD)
+    server.sendmail(EMAIL_ACCOUNT, all_recipients, msg.as_string())
+    server.quit()
+    
+    print(f"  香港仓库报告发送成功! (收件人: {len(HK_TO)}人, 抄送: {len(HK_CC)}人)")
+
 # ==================== 主流程 ====================
 if __name__ == "__main__":
     print(f"采购订单自动化 - {TODAY}")
@@ -1698,6 +1783,7 @@ if __name__ == "__main__":
         send_email(xlsm_path, summary_path, intl_path, overseas_path)
         send_domestic_report()
         send_qianhai_report()
+        send_hk_report()
         
         # 保存累计文件供第二天使用
         shutil.copy2(intl_path, os.path.join(WORKSPACE, "data/output/国内进口产品统计表.xlsx"))
