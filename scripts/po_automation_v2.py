@@ -507,7 +507,8 @@ def parse_qianhai_from_email(body, subject, attachments=None):
     
     # 表格格式: 序号 ERP料号 型号 ... 数量 PCS 报关单价 ...
     # 1 Y31010540 BM1373AA 集成电路 8542399000 ... 124,937 PCS 27.7858 ...
-    pattern = r'(\d+)\s+(Y\d+)\s+(BM\d{4}\S*)\s+集成电路\s+\d+\s+.+?([\d,]+)\s+PCS\s+([\d.]+)\s+([\d,.]+)'
+    # ERP料号可能是 Y09BM1746010 这种格式（Y09 后紧跟 BM）
+    pattern = r'(\d+)\s+(Y\S+)\s+(BM\d{4}\S*)\s+集成电路\s+\d+\s+.+?([\d,]+)\s+PCS\s+([\d.]+)\s+([\d,.]+)'
     
     for m in re.findall(pattern, body):
         code = m[1]  # ERP料号
@@ -555,7 +556,9 @@ def parse_overseas_from_email(body, subject, attachments=None):
 
     # 解析目的地
     destination = ""
-    if "群光" in body or "群光" in subject:
+    if "香港香远" in body or "香港香远" in subject or "HKXY" in body or "HKXY" in subject:
+        destination = "香港香远仓库"
+    elif "群光" in body or "群光" in subject:
         destination = "泰国群光"
     elif "ONETEC" in body or "ONETEC" in subject:
         destination = "泰国ONETEC"
@@ -565,11 +568,13 @@ def parse_overseas_from_email(body, subject, attachments=None):
         destination = "墨西哥欧陆通"
     elif "泰国" in body:
         destination = "泰国"
+    elif "香港" in body or "香港" in subject:
+        destination = "香港"
 
     # 解析供应商 - 优先标题，其次附件文件名，最后正文
     supplier = ""
     # 1. 标题
-    for kw in ["XJ", "NJVT", "SPILSZ", "ASECL", "ASE", "HN"]:
+    for kw in ["XJ", "NJVT", "SPILSZ", "ASECL", "ASE", "HN", "JSCC"]:
         if kw in subject:
             supplier = kw
             break
@@ -577,7 +582,7 @@ def parse_overseas_from_email(body, subject, attachments=None):
     if not supplier and attachments:
         for att in attachments:
             att_name = os.path.basename(att).upper()
-            for kw in ["XJ", "NJVT", "SPILSZ", "ASECL", "ASE", "HN"]:
+            for kw in ["XJ", "NJVT", "SPILSZ", "ASECL", "ASE", "HN", "JSCC"]:
                 if kw in att_name:
                     supplier = kw
                     break
@@ -585,7 +590,7 @@ def parse_overseas_from_email(body, subject, attachments=None):
                 break
     # 3. 正文
     if not supplier:
-        for kw in ["XJ", "信佳", "NJVT", "南京", "SPILSZ", "HN", "海纳"]:
+        for kw in ["XJ", "信佳", "NJVT", "南京", "SPILSZ", "HN", "海纳", "JSCC"]:
             if kw in body:
                 if kw == "信佳":
                     supplier = "XJ"
@@ -937,6 +942,7 @@ def generate_xlsm(items=None, output_name=None, is_qianhai=False):
         # 海外目的子库存
         for item in OVERSEAS_ITEMS:
             dest_subinv_map = {
+                '香港香远仓库': 'DPTYHGJC',
                 '泰国群光': 'DPTHQGCP',
                 '泰国ONETEC': 'DPTONETYCL',
                 'PIE': 'DPTPIECL',
@@ -1179,6 +1185,7 @@ def generate_summary_xlsx(items=None, output_name=None):
         else:
             # 海外DPT格式
             dest_subinv_map = {
+                '香港香远仓库': 'DPTYHGJC',
                 '泰国群光': 'DPTHQGCP', '泰国ONETEC': 'DPTONETYCL', 'PIE': 'DPTPIECL',
                 '前海保税区': 'DPTQHBSC', '墨西哥欧陆通': 'DPTMOLTYCL',
             }
@@ -1264,6 +1271,8 @@ def update_international_template():
         supplier_idx = ss_map.get(item['supplier'], KNOWN.get(item['supplier']))
         model_idx = ss_map.get(item['model'], KNOWN.get(item['model']))
         material_idx = ss_map.get(item['material_code'], KNOWN.get(item['material_code']))
+        if material_idx is None:
+            material_idx = ss_map.get(item.get('material_code',''), 0)
         po_idx = ss_map[item['po']]
         tax_agent_idx = ss_map.get(item['tax_agent'], KNOWN.get(item['tax_agent']))
         
