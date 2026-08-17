@@ -537,6 +537,27 @@ def parse_qianhai_from_email(body, subject, attachments=None):
             "po": "",
         })
     
+    # 新格式: 序号 物料编码 申报要素 数量 单价 总价（型号在申报要素的BMxxxx型）
+    if not items:
+        pattern2 = r'(\d+)\s+(Y\S+)\s+.+?(BM\d{4}[A-Z]{0,3})型.+?\s+([\d,]+)\s+([\d.]+)\s+([\d,.]+)'
+        for m in re.findall(pattern2, body):
+            code = m[1]
+            model = m[2].upper().strip()
+            qty = int(m[3].replace(',', ''))
+            price = get_model_price(model, code)
+            if not price:
+                price = float(m[4])
+            print(f"    前海: {model} {qty} PCS @ {price} USD, 编码={code}, 供应商={supplier}")
+            items.append({
+                "model": model,
+                "qty": qty,
+                "price": price,
+                "material_code": code,
+                "supplier": supplier or "未知",
+                "destination": "前海保税区",
+                "po": "",
+            })
+    
     return items
 
 def parse_overseas_from_email(body, subject, attachments=None):
