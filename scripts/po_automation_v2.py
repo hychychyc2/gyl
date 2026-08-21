@@ -658,18 +658,17 @@ def parse_overseas_from_email(body, subject, attachments=None):
                                     pass
                         # 继续处理后续sheet，不break
                     # 格式2：任意cell遍历找BM型号+相邻数量
-                    if not seen:
-                        for r in range(1, ws.max_row + 1):
-                            for c in range(1, min(ws.max_column + 1, 12)):
-                                val = str(ws.cell(row=r, column=c).value or '')
-                                bm = re.search(r'(BM\d{4}[A-Z]{0,3})', val)
-                                if bm:
-                                    model = bm.group(1).upper().strip()
-                                    for c2 in range(c + 1, min(ws.max_column + 1, c + 6)):
-                                        qty_val = ws.cell(row=r, column=c2).value
-                                        if qty_val and isinstance(qty_val, (int, float)) and int(qty_val) > 0:
-                                            seen[model] = seen.get(model, 0) + int(qty_val)
-                                            break
+                    for r in range(1, ws.max_row + 1):
+                        for c in range(1, min(ws.max_column + 1, 12)):
+                            val = str(ws.cell(row=r, column=c).value or '')
+                            bm = re.search(r'(BM\d{4}[A-Z]{0,3})', val)
+                            if bm:
+                                model = bm.group(1).upper().strip()
+                                for c2 in range(c + 1, min(ws.max_column + 1, c + 6)):
+                                    qty_val = ws.cell(row=r, column=c2).value
+                                    if qty_val and isinstance(qty_val, (int, float)) and int(qty_val) > 0:
+                                        seen[model] = seen.get(model, 0) + int(qty_val)
+                                        break
                 att_wb.close()
                 # 继续处理后续附件，不break
             except Exception as e:
