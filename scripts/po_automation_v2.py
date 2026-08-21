@@ -632,7 +632,7 @@ def parse_overseas_from_email(body, subject, attachments=None):
             try:
                 att_wb = load_workbook(att, data_only=True)
                 for sn in att_wb.sheetnames:
-                    if '发票' not in sn and '箱单' not in sn and '出货' not in sn and 'PACKING' not in sn.upper() and 'PK' not in sn.upper():
+                    if '发票' not in sn and '箱单' not in sn and '出货' not in sn and 'PACKING' not in sn.upper() and 'PK' not in sn.upper() and 'INVOICE' not in sn.upper():
                         continue
                     ws = att_wb[sn]
                     # 先检查表头，判断格式
