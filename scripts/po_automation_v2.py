@@ -632,7 +632,7 @@ def parse_overseas_from_email(body, subject, attachments=None):
             try:
                 att_wb = load_workbook(att, data_only=True)
                 for sn in att_wb.sheetnames:
-                    if '发票' not in sn and '箱单' not in sn and '出货' not in sn:
+                    if '发票' not in sn and '箱单' not in sn and '出货' not in sn and 'PACKING' not in sn.upper() and 'PK' not in sn.upper():
                         continue
                     ws = att_wb[sn]
                     # 先检查表头，判断格式
@@ -715,7 +715,7 @@ def generate_po_number(prefix, existing_items):
 
 def fetch_and_parse_orders():
     """主函数：从邮件获取并解析订单，设置DOMESTIC_ITEMS和OVERSEAS_ITEMS"""
-    global DOMESTIC_ITEMS, DOMESTIC_MERGED, OVERSEAS_ITEMS, OVERSEAS_ITEMS_PO
+    global DOMESTIC_ITEMS, DOMESTIC_MERGED, OVERSEAS_ITEMS
 
     # 加载编码和价格对照表
     load_model_code_map()
@@ -814,11 +814,6 @@ def fetch_and_parse_orders():
                 pass  # 无法解析日期则继续处理
             items = parse_qianhai_from_email(body, subject, attachments)
             if items:
-                # 同主体贸易国新加坡 → 不下PO
-                if "贸易国：新加坡" in body or "贸易国:新加坡" in body:
-                    print(f"    贸易国新加坡，同主体不下PO，跳过 {len(items)} 条")
-                    for item in items:
-                        item['skip_po'] = True
                 overseas_items.extend(items)
             continue
 
@@ -826,11 +821,6 @@ def fetch_and_parse_orders():
         if is_overseas or has_overseas_attachment or (not is_domestic and not is_qianhai and not attachments):
             items = parse_overseas_from_email(body, subject, attachments)
             if items:
-                # 同主体贸易国新加坡 → 不下PO
-                if "贸易国：新加坡" in body or "贸易国:新加坡" in body:
-                    print(f"    贸易国新加坡，同主体不下PO，跳过 {len(items)} 条")
-                    for item in items:
-                        item['skip_po'] = True
                 overseas_items.extend(items)
 
     # 国内不汇总；海外相同料号+目的地汇总
@@ -874,17 +864,15 @@ def fetch_and_parse_orders():
     
     DOMESTIC_ITEMS = domestic_items
     OVERSEAS_ITEMS = overseas_items
-    # 过滤掉同主体贸易国新加坡的前海保税区订单（不下PO）
-    OVERSEAS_ITEMS_PO = [item for item in OVERSEAS_ITEMS if not item.get('skip_po')]
 
     print(f"\n  国内订单: {len(DOMESTIC_ITEMS)} 条")
     for item in DOMESTIC_ITEMS:
         print(f"    {item['po']}: {item['model']} {item['qty']} PCS")
-    print(f"  海外订单: {len(OVERSEAS_ITEMS_PO)} 条")
-    for item in OVERSEAS_ITEMS_PO:
+    print(f"  海外订单: {len(OVERSEAS_ITEMS)} 条")
+    for item in OVERSEAS_ITEMS:
         print(f"    {item['po']}: {item['model']} {item['qty']} PCS")
 
-    return len(DOMESTIC_ITEMS) > 0 or len(OVERSEAS_ITEMS_PO) > 0
+    return len(DOMESTIC_ITEMS) > 0 or len(OVERSEAS_ITEMS) > 0
 
 # ==================== 工具函数 ====================
 def get_ss_map(ss_xml):
@@ -1445,10 +1433,10 @@ def update_domestic_statistics():
         if po_val:
             existing_po.add(po_val)
     
-    new_items = [item for item in OVERSEAS_ITEMS_PO if item['po'] not in existing_po]
-    skipped = len(OVERSEAS_ITEMS_PO) - len(new_items)
+    new_items = [item for item in OVERSEAS_ITEMS if item['po'] not in existing_po]
+    skipped = len(OVERSEAS_ITEMS) - len(new_items)
     if skipped > 0:
-        skipped_pos = [item['po'] for item in OVERSEAS_ITEMS_PO if item not in new_items]
+        skipped_pos = [item['po'] for item in OVERSEAS_ITEMS if item not in new_items]
         print(f"  去重: 跳过 {skipped} 条已存在的记录 (PO号: {skipped_pos})")
     
     if not new_items:
@@ -1507,7 +1495,7 @@ def send_email(xlsm_path, summary_path, intl_path, overseas_path):
         body_lines.append(f"  {item['po']}: {item['model']} {item['qty']} PCS, 报关单价 {item['price']} USD, 供应商={item['supplier']}, 税代={item['tax_agent']}")
     
     body_lines.extend(["", "**海外出口订单：**"])
-    for item in OVERSEAS_ITEMS_PO:
+    for item in OVERSEAS_ITEMS:
         body_lines.append(f"  {item['po']}: {item['model']} {item['qty']} PCS, 单价 {item['price']} USD, 收货地址={item['destination']}")
     
     body_lines.extend([
@@ -1819,7 +1807,7 @@ if __name__ == "__main__":
         print("今日无新订单，流程结束")
         sys.exit(0)
     
-    xlsm_path = generate_xlsm(list(DOMESTIC_MERGED) + list(OVERSEAS_ITEMS_PO))
+    xlsm_path = generate_xlsm()
     summary_path = generate_summary_xlsx()
     intl_path = update_international_template()
     overseas_path = update_domestic_statistics()
