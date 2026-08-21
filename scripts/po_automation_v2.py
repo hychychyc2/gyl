@@ -656,8 +656,7 @@ def parse_overseas_from_email(body, subject, attachments=None):
                                         print(f"    附件: {model} +{qty}")
                                 except:
                                     pass
-                        if seen:
-                            break
+                        # 继续处理后续sheet，不break
                     # 格式2：任意cell遍历找BM型号+相邻数量
                     if not seen:
                         for r in range(1, ws.max_row + 1):
@@ -672,8 +671,7 @@ def parse_overseas_from_email(body, subject, attachments=None):
                                             seen[model] = seen.get(model, 0) + int(qty_val)
                                             break
                 att_wb.close()
-                if seen:
-                    break
+                # 继续处理后续附件，不break
             except Exception as e:
                 print(f"    附件解析失败: {e}")
 
