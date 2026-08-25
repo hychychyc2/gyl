@@ -91,7 +91,7 @@ def load_model_code_map():
         ws = wb['编码对账表']
         codes = {}
         for row in ws.iter_rows(min_row=2, values_only=True):
-            chip_name = row[1] or row[2]   # B列=简称 or C列=名称
+            chip_name = row[2] or row[1]   # 优先C列芯片名称（如BM1370AA），否则B列简称（如BM1370）
             material_code = row[3]  # D列=物料编码
             if chip_name and material_code and str(material_code).startswith('Y'):
                 codes[str(chip_name).upper().strip()] = str(material_code)
