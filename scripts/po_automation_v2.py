@@ -111,8 +111,14 @@ def load_price_map():
     try:
         wb = load_workbook(prices_file, data_only=True)
         
-        # 1. 从 PO sheet 加载型号→价格（fallback用）
-        ws_po = wb.active
+        # 1. 从 chanhua芯片价格 sheet 加载型号→价格（fallback用）
+        ws_po = None
+        for sn in wb.sheetnames:
+            if 'chanhua' in sn or '芯片价格' in sn:
+                ws_po = wb[sn]
+                break
+        if ws_po is None:
+            ws_po = wb.active
         prices = {}
         for row in ws_po.iter_rows(min_row=2, values_only=True):
             model = row[0]
