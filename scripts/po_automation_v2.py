@@ -518,18 +518,23 @@ def parse_qianhai_from_email(body, subject, attachments=None):
     # 表格格式: 序号 ERP料号 型号 ... 数量 PCS 报关单价 ...
     # 1 Y31010540 BM1373AA 集成电路 8542399000 ... 124,937 PCS 27.7858 ...
     # ERP料号可能是 Y09BM1746010 这种格式（Y09 后紧跟 BM）
-    pattern = r'(\d+)\s+(Y\S+)\s+(BM\d{4}\S*)\s+集成电路\s+\d+\s+.+?([\d,]+)\s+PCS\s+([\d.]+)\s+([\d,.]+)'
+    # 新正则：先匹配序号+编码+型号，再从后面的文本中找 PCS 数量和价格
+    pattern = r'(\d+)\s*(Y\S{0,18}?)\s*(BM\d{4}[A-Z]{0,3})'
     
-    for m in re.findall(pattern, body):
-        code = m[1]  # ERP料号
-        model = m[2].upper().strip()  # 型号
-        qty = int(m[3].replace(',', ''))  # 数量
+    for m in re.finditer(pattern, body):
+        code = m.group(2)  # 物料编码
+        model = m.group(3).upper().strip()  # 型号
+        rest = body[m.end():]
+        pq = re.search(r'([\d,]+\.?\d*)\s*PCS\s*([\d.]+)', rest)
+        if not pq:
+            continue
+        qty = int(pq.group(1).replace(',', ''))  # 数量
         
         # 价格从价格表获取，优先按物料编码精确匹配
         price = get_model_price(model, code)
         if not price:
             # fallback to email body
-            price = float(m[4])
+            price = float(pq.group(2))
             print(f"    ⚠ 前海 {model} 未找到价格，使用邮件中价格 {price}")
         
         print(f"    前海: {model} {qty} PCS @ {price} USD, 编码={code}, 供应商={supplier}")
